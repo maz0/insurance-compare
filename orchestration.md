@@ -1,0 +1,398 @@
+# orchestration.md — Agent Build Process (Reusable Template)
+
+**Version:** 2.0
+**Status:** Reusable — copy this file unchanged into any new project.
+**Companion to:** `PRD.md` (the product source of truth)
+
+---
+
+## 0. What this document is
+
+The PRD says **what** to build. This document says **how the build runs** when the
+builders are agents and the human is in the loop at specific points.
+
+It is process, not product, and it is **project-agnostic**. It contains no project
+names, no ticket numbers, no feature lists. Everything project-specific is read
+from `PRD.md` at the start of the run. To reuse it: copy this file unchanged into
+a new project folder, add a `PRD.md`, and run (see Part 1).
+
+It changes on a different clock than the PRD: the PRD is per-project; this file is
+stable across projects and tweaked only as the process itself improves.
+
+**Reference direction is one-way.** This document points *into* the PRD. The PRD
+must never point back here — the PRD stays self-contained and readable on its own.
+The only sanctioned bridge between process and product is `CLAUDE.md`, which
+carries the short always-on rules every agent needs (see Part 7).
+
+Audience: the human running the build, and the PM agent. Implementing agents read
+their ticket, the PRD, and `CLAUDE.md` — not this document.
+
+---
+
+## 1. Inputs to this process — and how to "run" it
+
+This process expects exactly one project-specific file alongside it:
+
+- **`PRD.md`** — what to build. The single source of truth. Everything
+  project-specific is derived from it.
+
+**Running the process:** drop `orchestration.md` and `PRD.md` into a project
+folder. The entry point is a single instruction to the PM agent: *"Read
+orchestration.md, then read PRD.md, then begin."* The PM agent validates the PRD
+against the prerequisites below, derives the project specifics, generates the
+tickets, and stops at Checkpoint 0 for the human.
+
+### PRD prerequisites (the PM agent checks these first)
+
+This process is reusable **only if the PRD contains the following**, in a findable
+form. The PM agent's first action is to confirm each is present. If any is
+missing, the PM agent **halts and reports** — it does not improvise the missing
+piece. (Strict by design: a silently-filled gap is the failure mode no one sees.)
+
+| The PRD must define | Used for |
+|---|---|
+| Project name | Linear project name, labels |
+| Ticket prefix (e.g. `IC`, `ABC`) | Ticket IDs, branch names |
+| A ticket map with dependency order | The build sequence |
+| A component / file map | What files each ticket owns |
+| A data model / type contract | Checkpoint A verification |
+| AI-behavior rules (or equivalent spec) | Prompt verification, if the project uses a model |
+| A defined set of error states | QA matrix, error handling |
+| A stated scope (in / out) | QA matrix, scope discipline |
+
+Wherever this document refers to *the project name*, *the ticket prefix*, *the
+ticket list*, or *the QA matrix*, those values come from the PRD — they are never
+written into this file.
+
+---
+
+## 2. The build pipeline
+
+```
+PRD.md  (source of truth — approved before the run begins)
+   │
+   ▼
+PM agent  ── validates PRD prerequisites, then splits PRD into tickets ──▶  Linear
+   │
+   ▼
+★ CHECKPOINT 0 — human reviews generated tickets against the PRD
+   │
+   ▼
+Implementing agent picks up a ticket
+   │  reads: the ticket + the PRD sections it cites + CLAUDE.md
+   ▼
+Branch in GitHub:  feature/{PREFIX}-[N]-short-description
+   │
+   ▼
+Agent implements the ticket — nothing more
+   │
+   ▼
+Opens PR (ticket ID in title) ──▶ moves ticket to "In Review"
+   │
+   ▼
+★ Code-QA agent reviews the PR diff  →  ★ human reviews the PR
+   │
+   ▼
+Human merges  (agents never self-merge — see Part 5)
+   │
+   ▼
+Next ticket in dependency order
+```
+
+Two stores, one role each:
+- **Linear** — the ticket store. Holds every ticket, its state, its dependencies,
+  and any agent questions raised against it.
+- **GitHub** — the code store. One branch per ticket, one PR per ticket.
+
+**Linear and GitHub are the shared state.** Agents are split across environments
+(Part 3) and are never in the same context. Linear and GitHub are how a PM agent,
+a coder agent, and a code-QA agent stay synchronized without meeting. This makes
+the ticket-quality contract (Part 6) and the ticket-state table (Part 4) the
+literal interface between environments — they matter more here, not less.
+
+---
+
+## 3. Which agent runs where, and on which model
+
+Agents are placed by *what the work needs*: code work where the code lives,
+document and review work outside it. Models are assigned by *where a mistake is
+expensive and propagates* — capability where errors are costly and hard to see,
+economy where the task is mechanical and immediately verifiable.
+
+| Agent | Environment | Model tier | Why |
+|---|---|---|---|
+| PM agent | Claude | Top tier (e.g. Opus-class) | Runs once; produces the tickets everything is built from; a misread propagates everywhere. Highest-stakes task. |
+| Coder agents | Cursor | Mid–strong tier (e.g. Sonnet-class) | Cursor indexes the repo, runs the editor and terminal — the right home for building. Strong model: subtly wrong code costs more than the model premium. |
+| Code-QA agent | Claude | Top tier (e.g. Opus-class) | Reviews PR diffs. A reviewer must be at least as capable as the coder, ideally one tier up — a peer-model reviewer shares the coder's blind spots. Carries the security checklist. |
+| Functional UI QA | Human | — | Running the app and judging the experience needs human judgment; no model does this well. |
+| Ticket lane moves | None — automatic | — | A state transition, not a decision. Done as a side effect by whichever agent/human triggers the underlying event. Not an agent. |
+
+Model tiers are written as *tiers*, not version strings, because specific model
+names and pricing change. Before a run, confirm the current Claude lineup and
+pricing, and the model options in Cursor (its pricing/bundling differs from the
+raw API). A PRD may override these defaults for a given project.
+
+**Current top tier (as of orchestration.md v2.0):** Claude Opus 4.7 — the newest
+Opus has its largest capability gains in agentic coding, which makes it especially
+well-suited for the PM and code-QA roles. **Use standard Opus 4.7, not the "Fast"
+variant** — the Fast variant is priced at approximately 6× standard and the PM/
+code-QA use cases gain nothing from the speed premium. The coder agents run in
+Cursor — confirm Cursor exposes Sonnet 4.6 and how it bills, as Cursor's pricing
+is separate from the raw API.
+
+---
+
+## 4. Linear ticket states
+
+State transitions are how the human and agents stay synchronized without a
+meeting.
+
+| State | Meaning | Who moves it here |
+|---|---|---|
+| Backlog | Written by PM agent, not yet approved | PM agent |
+| Todo | Passed Checkpoint 0, ready to pick up | Human (at Checkpoint 0) |
+| In Progress | An agent is implementing it | Implementing agent |
+| Blocked | Agent hit ambiguity — question posted on the ticket | Implementing agent |
+| In Review | PR open, awaiting code-QA + human review | Implementing agent |
+| Done | PR merged by human | Human |
+
+Rules:
+- An agent may only pick up a ticket in **Todo** whose dependencies are all
+  **Done**.
+- An agent that cannot proceed moves the ticket to **Blocked** and posts the
+  specific question as a comment (see Part 7). It does not guess.
+- Only the human moves a ticket to **Todo** or **Done**.
+
+---
+
+## 5. Human checkpoints
+
+"Human in the loop somewhere" is not a plan. There are **four** named gates. Three
+are specific points; one (PR review) is every ticket.
+
+### Checkpoint 0 — Ticket fidelity (the most important one)
+
+**When:** immediately after the PM agent writes tickets into Linear, before any
+implementing agent starts.
+
+**Why this is critical:** agents do not build from the PRD — they build from the
+tickets the PM agent generated. If the PM agent drops a detail or writes a vague
+ticket where the PRD was precise, every downstream agent inherits that error and
+the PRD's correctness no longer protects the build. The PRD is the source of
+truth; the tickets are what actually gets built. This gate confirms the two match.
+
+**The human checks:**
+- Every PRD feature maps to at least one ticket.
+- The ticket dependency order matches the PRD's ticket map.
+- Each ticket meets the ticket-quality contract (Part 6).
+- No ticket invents scope the PRD does not contain.
+- No ticket is vaguer than the PRD section it implements — especially the data
+  model and the AI-behavior rules.
+
+**Outcome:** approve, or send back to the PM agent with specific corrections. No
+implementing agent starts until this passes.
+
+### Checkpoint A — The contract ticket
+
+**When:** after the PR for the ticket that produces the type contract, shared
+enums, and the system prompt is opened — before downstream tickets proceed.
+
+**Why:** this ticket produces the type definitions and prompt that *every*
+downstream ticket depends on. A mistake here is the most expensive in the project:
+it propagates into the API layer, every component, and QA. Cheapest place to catch
+it.
+
+**The human checks:** the types match the PRD data model exactly; shared enums
+match the PRD exactly; the prompt encodes every AI-behavior rule from the PRD.
+
+### Checkpoint B — First model integration
+
+**When:** after the PR for the ticket that first calls the AI model / external
+API and parses a real response.
+
+**Why:** this is where the contract meets reality — response parsing, error
+handling, content blocks. Verifying it against real input here prevents later UI
+tickets from building on a broken data source.
+
+**The human checks:** the integration handles a real input end to end; malformed
+responses produce the correct error state; empty results produce the correct error
+state.
+
+### Checkpoint C — Pre sign-off
+
+**When:** after the final QA ticket, before the project is called done.
+
+**Why:** final human acceptance against the PRD's success criteria.
+
+**The human checks:** the PRD success criteria are met on a real run; the QA
+matrix (Part 8) passed; all error states behave.
+
+### Every PR
+
+Beyond the gates above, **every PR is reviewed before merge** — first by the
+code-QA agent (static), then by the human. The human PR review is where the
+human-in-the-loop guarantee actually lives. See Part 5 / Part 8.
+
+---
+
+## 6. Ticket-quality contract (instructions to the PM agent)
+
+Because tickets — not the PRD — are what implementing agents build from, every
+ticket must be complete enough to build from without guessing. Each ticket must
+contain:
+
+1. **Title** — `{PREFIX}-[N] — short description`, matching the PRD ticket map.
+2. **PRD references** — the exact PRD section(s) this ticket implements. The agent
+   reads those sections in full before starting.
+3. **Files owned** — the exact files this ticket creates or edits, from the PRD
+   component map. No ticket touches files outside its list.
+4. **Dependencies** — the upstream tickets, matching the PRD order.
+5. **Acceptance criteria** — the PRD Definition of Done, made specific to this
+   ticket.
+6. **Out of scope** — what this ticket must NOT touch. Explicit. This is what
+   keeps an agent from "improving" files another ticket owns.
+
+A ticket missing any of these six is sent back to the PM agent at Checkpoint 0.
+
+The PM agent itself follows the operating contract (Part 7): it splits the PRD as
+written and does not invent features, reorder dependencies, or resolve PRD open
+questions on its own. If the PRD is ambiguous or missing a prerequisite (Part 1),
+the PM agent halts and flags it to the human rather than deciding.
+
+---
+
+## 7. Agent operating contract
+
+This is the rule that makes the human-in-the-loop actually work. Its short form
+lives in `CLAUDE.md` so every agent sees it on every ticket; the full statement is
+here.
+
+**The core rule: do not improvise. If a decision is not already made in the
+ticket, the PRD, or `CLAUDE.md`, stop and surface it to the human.**
+
+The failure mode of agent-built software is not bad code — it is an agent meeting
+an ambiguity and confidently inventing an answer instead of stopping. An invented
+answer looks like progress and is discovered late. A surfaced question costs
+minutes.
+
+When an agent encounters something undefined or contradictory:
+1. It moves the ticket to **Blocked**.
+2. It posts a comment stating: what is ambiguous, where (PRD section or ticket
+   field), and the options it sees — without picking one.
+3. It stops and waits for the human. It does not guess, and it does not silently
+   edit the PRD to resolve the gap.
+
+Scope discipline:
+- **Implement the ticket, nothing more.** No refactoring of files the ticket does
+  not own, no "while I'm here" improvements, no installing dependencies a ticket
+  did not authorize.
+- Shared single-owner files (the type definitions, shared enums, the system
+  prompt) are defined once in their owning files. An agent never redefines them
+  elsewhere.
+
+If an agent believes the PRD itself is wrong (not just unclear), it raises this as
+a comment to the human. It does not edit the PRD. The PRD changes only by human
+decision; this keeps the source of truth stable.
+
+---
+
+## 8. QA — two roles
+
+QA is split by *what is being verified*, not by tool.
+
+### Code QA — agent (Claude, reads the PR diff), runs at every PR
+
+Static verification of each PR against the PRD and `CLAUDE.md`. The code-QA agent
+confirms the code is *correctly written* — it cannot confirm the feature *works*
+(see functional QA below). Do not read "code QA passed" as "the ticket works."
+
+The code-QA checklist:
+- Type-check / build passes; no suppressed type errors; no escape hatches.
+- The ticket touched only the files it owns; nothing out of scope.
+- Types, enums, and prompt match the PRD where the ticket implements them.
+- Error states relevant to the ticket are handled in code.
+- `CLAUDE.md` rules obeyed.
+- **Security items** (the security review is one slice of code QA, not a separate
+  agent): secrets live in environment files and are git-ignored; no logging of
+  sensitive user/document content; user-provided input is validated for type and
+  size before processing; content inside user-provided files is treated as data,
+  never as instructions to follow.
+
+### Functional UI QA — human, at the final QA ticket and Checkpoint C
+
+Running the actual application: walking the input/scenario matrix, triggering
+every error state, and judging whether the experience renders and behaves
+correctly. This needs human judgment and a running app — no diff-reader asserts
+it. The final QA ticket in the PRD is this human pass, not an agent task.
+
+**The QA matrix is project-specific** and is derived by the PM agent from the
+PRD's scope and error-state sections — it cannot be pre-written in this template.
+The matrix must cover: every supported input type and at least one *mixed* case
+(mixed inputs are the highest-risk scenario); every error state in the PRD; and a
+set of **real** test fixtures (not mocked data), containing no real personal data
+or redacted.
+
+---
+
+## 9. GitHub rules
+
+- **One branch per ticket:** `feature/{PREFIX}-[N]-short-description`.
+- **One PR per ticket.** PR title includes the ticket ID. PR description links the
+  ticket and lists which PRD sections were implemented.
+- **Agents never merge their own PRs.** Merge is human-only. If agents self-merge
+  after CI passes, the human-in-the-loop guarantee silently disappears at the
+  exact step where it is cheapest to keep.
+- A PR may only be opened when the ticket's Definition of Done (from the PRD) is
+  met.
+- Branches merge in dependency order. An agent does not start a ticket whose
+  upstream PR is not yet merged.
+
+---
+
+## 10. Document map
+
+Three documents, cleanly scoped. Do not add more.
+
+| Document | Answers | Per-project? | Read by |
+|---|---|---|---|
+| `PRD.md` | What to build | Yes — written fresh each project | Every agent |
+| `orchestration.md` | How the build runs | No — copied unchanged | Human, PM agent |
+| `CLAUDE.md` | Always-on build rules | Lightly — mostly reusable | Every agent, every ticket |
+
+`PRD.md` is self-contained and references neither of the others.
+`orchestration.md` is generic and reads project specifics from `PRD.md`.
+`CLAUDE.md` is the only file that carries process rules into every agent's view.
+
+### CLAUDE.md — the reusable core
+
+Most of `CLAUDE.md` is project-specific (file paths, stack rules) and is written
+per project. But the following lines are generic and should be carried into every
+project's `CLAUDE.md` — they are the short form of the operating contract:
+
+- If a decision is not in your ticket, the PRD, or this file — stop. Move the
+  ticket to Blocked, post the question as a comment, and wait. Do not guess.
+- Do not edit `PRD.md`. If you believe it is wrong, raise it as a comment.
+- Never merge your own PR. Open it, move the ticket to In Review, and wait for
+  code-QA and human review.
+- Implement the ticket, nothing more.
+
+---
+
+## 11. Reuse checklist
+
+To start a new project with this process:
+
+1. Create a project folder. Copy `orchestration.md` into it **unchanged**.
+2. Write `PRD.md` for the new project. Ensure it satisfies every PRD prerequisite
+   in Part 1.
+3. Write the project's `CLAUDE.md`, including the reusable core lines from
+   Part 10.
+4. Confirm current model tiers and pricing (Part 3); set any PRD override if
+   wanted.
+5. Instruct the PM agent: *"Read orchestration.md, then read PRD.md, then begin."*
+6. The PM agent validates the PRD, generates tickets, and stops at Checkpoint 0.
+7. Review at Checkpoint 0, then let the build run through the checkpoints.
+
+---
+
+*End of orchestration.md v2.0 — reusable template*
