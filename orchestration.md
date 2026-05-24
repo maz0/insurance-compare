@@ -395,4 +395,187 @@ To start a new project with this process:
 
 ---
 
+## 12. Autonomous Epic Mode
+
+### 12.0 What this mode is, and when it is allowed
+
+The standard process (Parts 1–11) gates every PR on a human review before merge.
+**Autonomous Epic Mode** lets the build run unattended between a small number of
+human checkpoints — the orchestrator builds, verifies, and merges mechanical
+tickets on its own, and parks itself at checkpoint tickets for human review.
+
+This mode trades a measure of safety for unattended progress. It is **only
+appropriate when the cost of a bad run is low and bounded**:
+
+- The work is in version control; every change is an isolated, revertable PR.
+- The project is internal / low-stakes — no external users, no production data,
+  no irreversible side effects.
+- A worst-case unattended run produces *wrong code on a branch*, not damage.
+
+If those conditions do not hold, do not use this mode — use the standard process.
+The decision to enable this mode is the **human's**, made per epic, and recorded
+in the PRD decisions log.
+
+### 12.1 The orchestrator loop
+
+Autonomous mode requires an **orchestrator** — a script or scheduled process that
+drives the build. It is not an agent that makes judgments; it is a sequencer. Its
+loop:
+
+```
+LOOP:
+  1. Find the next ticket in state Todo whose dependencies are all Done.
+       - none found → STOP (epic complete, or all remaining work is blocked)
+  2. If that ticket is a CHECKPOINT ticket (see 12.3):
+       → do not start it. Post "Checkpoint reached — awaiting human." HALT.
+  3. Hand the ticket to a dev agent with the standard dev-agent prompt.
+  4. Wait for the dev agent to open a PR (ticket → In Review),
+     or to move the ticket to Blocked.
+       - ticket went Blocked → HALT (see 12.5)
+  5. Run the merge gate (see 12.2) on the PR.
+       - gate PASS → merge PR, ticket → Done. Go to 1.
+       - gate FAIL → run the code-bug sub-loop (see 12.4).
+```
+
+The orchestrator never merges a checkpoint ticket and never merges on a failed
+gate. It only ever does two things on its own: merge a green non-checkpoint PR,
+and advance to the next ticket.
+
+### 12.2 The merge gate (replaces live human merge for non-checkpoint tickets)
+
+In the standard process, a human reviews and merges every PR. In autonomous mode,
+for **non-checkpoint tickets only**, that human merge is replaced by an automated
+gate. A PR merges only if **all** of these pass:
+
+1. **Build & type-check** — the project builds; `tsc --noEmit` is clean.
+2. **Automated checks** — lint and any automated tests/assertions pass.
+3. **Code-QA agent approval** — the code-QA agent (Part 8) has reviewed the PR
+   diff and posted explicit approval as a PR comment.
+
+If any fails, the PR does **not** merge — the orchestrator runs the code-bug
+sub-loop (12.4).
+
+**The code-QA agent is the only quality gate on unattended tickets.** On every
+ticket the human does not personally review, "build green + code-QA approved" is
+the entire bar. This has two consequences that are not optional:
+
+- The code-QA agent runs on a **strong model** (Part 3 — top tier). Under
+  autonomy this matters more, not less: it is standing in for the human reviewer.
+- The code-QA checklist (Part 8) must explicitly cover the things a human would
+  otherwise catch by eye on a mechanical ticket:
+  - **Scope adherence** — the PR touched only the files the ticket owns; nothing
+    out of scope.
+  - **CLAUDE.md compliance** — no `any`/`@ts-ignore`, no inline strings, no
+    hand-edited `components/ui/` files, secrets handling correct.
+  - **Single-owner rules** — shared types/enums/prompt not redefined.
+  - **PR-callout requirement** — if the PR adds a shadcn primitive, the PR
+    description lists each primitive and the criterion it serves (per CLAUDE.md).
+  - **Acceptance criteria** — every criterion in the ticket is actually met.
+
+A shallow code-QA agent does not make autonomous mode faster — it removes the
+gate and replaces it with nothing.
+
+### 12.3 Checkpoint tickets — hard stops
+
+Some tickets carry decisions an agent cannot safely self-certify. These are
+**checkpoint tickets**. The orchestrator **halts** when it reaches one — it does
+not start it, build it, or merge anything. The human then reviews, and releases
+the loop with a single action.
+
+Which tickets are checkpoints is **derived from the PRD's checkpoints** (Part 5)
+and tagged in the ticket tracker before the run. For a typical build:
+
+| Checkpoint ticket | Why it is a hard stop |
+|---|---|
+| The type/prompt-contract ticket (Checkpoint A) | Highest-leverage artifact; everything downstream consumes it. The prompt's rule-traceability table needs a human read. |
+| The first model-integration ticket (Checkpoint B) | First time the contract meets a real model response. |
+| The final QA ticket (Checkpoint C) | This is the human functional pass — see 12.6. It is a human task, not an agent task. |
+| *(Optional)* The first ticket that renders real product output | First chance to look at the actual UI. Not a formal gate, but a natural place for a human glance. |
+
+This yields roughly **3–4 human reviews across an entire epic** instead of one per
+ticket. The human reviews where judgment is required and nowhere else; the
+mechanical tickets between checkpoints run unattended.
+
+A run therefore looks like: *overnight* — orchestrator builds the tickets up to
+the next checkpoint and parks; *morning* — human does that one checkpoint review
+and releases the loop; *repeat*. The human never reviews at 1am and never reviews
+a mechanical ticket individually.
+
+### 12.4 Code-bug sub-loop (automated fixing — code bugs only)
+
+When the merge gate fails on a non-checkpoint PR, the failure is — by
+construction — a **code bug**: a build break, a type error, a lint failure, a
+failed automated assertion. These are machine-detectable and unambiguous, so an
+agent may fix them unattended:
+
+```
+CODE-BUG SUB-LOOP:
+  1. File a bug ticket capturing the exact failure (the failing check + output).
+  2. Hand the bug ticket to a dev agent.
+  3. Dev agent fixes on the same branch / a fix branch; re-runs the merge gate.
+  4. Gate PASS → merge, ticket → Done, return to main loop.
+     Gate FAIL again → retry up to N times (recommend N = 2).
+  5. After N failed attempts → HALT. Leave the ticket Blocked with the full
+     failure history for the human.
+```
+
+**Scope limit — this sub-loop is for code bugs only.** It handles failures that
+an automated check can *detect*. It does **not** handle anything requiring
+judgment about whether the product is correct or behaves well — that is functional
+QA (12.6) and stays human. An agent must never be put in a position of deciding
+whether a feature "works" — only whether a check passes.
+
+The retry cap exists so a ticket the agent cannot fix does not loop forever
+burning tokens. Two attempts, then a human looks.
+
+### 12.5 Halt conditions
+
+The orchestrator stops the run — and waits for a human — on any of:
+
+- **Checkpoint reached** — a checkpoint ticket is next (12.3).
+- **Ticket Blocked** — a dev agent hit ambiguity and moved its ticket to Blocked.
+  The whole loop halts, not just that agent: a blocked ticket usually has
+  dependents, and skipping ahead would build on an unfinished foundation.
+- **Code-bug retry cap exceeded** — the sub-loop could not fix a failure in N
+  attempts (12.4).
+- **No eligible ticket** — nothing in Todo has all dependencies Done. Either the
+  epic is complete, or everything remaining is waiting on a halted ticket.
+
+On any halt, the orchestrator posts a clear status: which ticket, why it halted,
+and what the human needs to do. The morning review starts from that message.
+
+### 12.6 What stays human — non-negotiable
+
+Autonomous mode does **not** automate these. They remain human, exactly as in the
+standard process:
+
+- **Checkpoint reviews** (A, B, and any optional ones) — the 3–4 reviews in 12.3.
+- **Functional QA** — running the actual application and judging whether it
+  behaves and looks correct. No agent does this. The final QA ticket is a human
+  ticket. Automated checks (build, types, assertions) are not functional QA and
+  must not be presented as if they were.
+- **PRD changes** — the PRD is still changed only by human decision.
+- **Releasing the loop after a halt** — the orchestrator never restarts itself
+  past a checkpoint or a Blocked ticket. A human releases it.
+
+### 12.7 Enabling autonomous mode for an epic — checklist
+
+Before starting an unattended run:
+
+1. Confirm the low-stakes conditions in 12.0 hold for this epic. Record the
+   decision in the PRD decisions log.
+2. Confirm **Checkpoint 0 has passed** — autonomous mode runs *after* the human
+   has reviewed the generated tickets. It does not automate Checkpoint 0.
+3. Tag the checkpoint tickets (12.3) in the ticket tracker.
+4. Confirm the code-QA agent is on a strong model and its checklist includes the
+   12.2 additions.
+5. Confirm the merge gate (CI + code-QA approval) is actually wired — a gate that
+   is not enforced is not a gate.
+6. Confirm "Blocked" halts the orchestrator, not just the dev agent.
+7. Set the code-bug retry cap (recommend N = 2).
+8. Start the orchestrator. Let it run to the first halt.
+
+---
+
+*End of Part 12 — Autonomous Epic Mode*
 *End of orchestration.md v2.0 — reusable template*

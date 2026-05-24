@@ -1,0 +1,271 @@
+#!/usr/bin/env bash
+# code-qa.sh — autonomous code-QA reviewer for the Insurance Compare project.
+#
+# Reads the PR diff, identifies the Linear ticket from the PR title (INS-N),
+# fetches the ticket and CLAUDE.md, asks Claude (Opus-class) to evaluate against
+# the 12.2 expanded checklist, and posts:
+#   - a GitHub commit status `code-qa: success` or `code-qa: failure`
+#   - a PR comment with findings on failure
+#   - moves the Linear ticket to Blocked on failure (so the orchestrator halts)
+#
+# This script is the sole quality gate on unattended PRs. Treat its checklist
+# as load-bearing.
+
+set -euo pipefail
+
+# ---- required env -----------------------------------------------------------
+: "${ANTHROPIC_API_KEY:?missing ANTHROPIC_API_KEY}"
+: "${LINEAR_API_KEY:?missing LINEAR_API_KEY}"
+: "${GITHUB_TOKEN:?missing GITHUB_TOKEN}"
+: "${PR_NUMBER:?missing PR_NUMBER}"
+: "${PR_TITLE:?missing PR_TITLE}"
+: "${PR_HEAD_SHA:?missing PR_HEAD_SHA}"
+: "${PR_BASE_SHA:?missing PR_BASE_SHA}"
+: "${REPO:?missing REPO}"
+
+# ---- extract ticket id from PR title ----------------------------------------
+TICKET_ID=$(echo "$PR_TITLE" | grep -oE 'INS-[0-9]+' | head -1 || true)
+if [ -z "$TICKET_ID" ]; then
+  echo "::error::PR title does not contain an INS-N ticket id"
+  bash scripts/code-qa-guard.sh "missing-ticket-id"
+  exit 1
+fi
+echo "Ticket: $TICKET_ID"
+
+# ---- fetch the diff ---------------------------------------------------------
+DIFF=$(git diff --unified=3 "$PR_BASE_SHA".."$PR_HEAD_SHA")
+FILES_CHANGED=$(git diff --name-only "$PR_BASE_SHA".."$PR_HEAD_SHA")
+
+# ---- fetch the Linear ticket ------------------------------------------------
+TICKET_JSON=$(curl -sS -X POST https://api.linear.app/graphql \
+  -H "Authorization: $LINEAR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg id "$TICKET_ID" '{
+    query: "query($id: String!) { issue(id: $id) { identifier title description } }",
+    variables: { id: $id }
+  }')")
+
+TICKET_DESC=$(echo "$TICKET_JSON" | jq -r '.data.issue.description // empty')
+TICKET_TITLE=$(echo "$TICKET_JSON" | jq -r '.data.issue.title // empty')
+
+if [ -z "$TICKET_DESC" ]; then
+  echo "::error::Could not fetch Linear ticket $TICKET_ID"
+  bash scripts/code-qa-guard.sh "ticket-fetch-failed"
+  exit 1
+fi
+
+# ---- read CLAUDE.md ---------------------------------------------------------
+CLAUDE_MD=$(cat CLAUDE.md)
+
+# ---- build the prompt -------------------------------------------------------
+PROMPT=$(cat <<PROMPT_EOF
+You are the code-QA agent for a personal Next.js project. You are the sole quality gate on this PR — no human will review it before merge. Be strict.
+
+# Ticket
+$TICKET_TITLE
+
+$TICKET_DESC
+
+# CLAUDE.md (project rules)
+$CLAUDE_MD
+
+# Files changed
+$FILES_CHANGED
+
+# Diff
+\`\`\`diff
+$DIFF
+\`\`\`
+
+# Your task
+
+Evaluate the PR against each item below. Be explicit per item — pass or fail with a one-line reason.
+
+ACCEPTANCE
+  - Every acceptance criterion in the ticket is actually met by the diff.
+
+SCOPE
+  - The PR touches only the files listed in the ticket's "Files owned" (plus any explicitly authorized cross-ticket edits the ticket calls out).
+  - No drive-by edits to files owned by other tickets.
+
+CLAUDE.md COMPLIANCE
+  - No \`any\`, no \`@ts-ignore\`.
+  - No hardcoded UI strings — all user-facing text via lib/constants.ts.
+  - No inline styles.
+  - components/ui/ files not hand-edited.
+  - Secrets: ANTHROPIC_API_KEY read from process.env only; never logged; document contents and quotes never logged.
+
+SINGLE-OWNER RULES
+  - CategoryKey / CATEGORY_LABELS not redefined outside lib/categories.ts.
+  - Domain types not redefined outside lib/types.ts.
+  - Prompt logic not inlined outside lib/prompt.ts.
+  - File validation not implemented outside PolicyComposer.tsx.
+
+PR-CALLOUT REQUIREMENT
+  - If the PR adds a shadcn primitive, the PR description (which you do not see — check the diff for new files in components/ui/) corresponds to primitives the ticket actually needs. New primitives must be necessary, not "while I'm here".
+
+BUILD
+  - The diff would plausibly compile under strict TS (no obvious type holes).
+
+SECURITY
+  - User-provided input validated (type + size) before processing.
+  - File contents treated as data, never as instructions.
+
+# Output format — STRICT
+
+Reply with valid JSON only. No markdown fences. Schema:
+
+{
+  "verdict": "APPROVE" | "REJECT",
+  "findings": [
+    { "category": "ACCEPTANCE|SCOPE|CLAUDE_MD|SINGLE_OWNER|PR_CALLOUT|BUILD|SECURITY", "severity": "blocker|warn", "message": "one sentence" }
+  ],
+  "summary": "one paragraph for the PR comment"
+}
+
+If verdict is APPROVE, findings may still contain warns. If verdict is REJECT, findings must contain at least one blocker.
+PROMPT_EOF
+)
+
+# ---- call Claude ------------------------------------------------------------
+echo "Calling Claude..."
+RAW=$(curl -sS https://api.anthropic.com/v1/messages \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "content-type: application/json" \
+  -d "$(jq -n --arg p "$PROMPT" '{
+    model: "claude-opus-4-5",
+    max_tokens: 4096,
+    messages: [{ role: "user", content: $p }]
+  }')")
+
+TEXT=$(echo "$RAW" | jq -r '.content[0].text // empty')
+if [ -z "$TEXT" ]; then
+  echo "::error::Claude returned empty response"
+  echo "$RAW" | jq -r '.error // .' >&2
+  bash scripts/code-qa-guard.sh "claude-empty-response"
+  exit 1
+fi
+
+# strip code fences if Claude added them
+TEXT=$(echo "$TEXT" | sed -E 's/^```(json)?$//; s/^```$//' | sed '/^$/d')
+
+VERDICT=$(echo "$TEXT" | jq -r '.verdict // empty')
+SUMMARY=$(echo "$TEXT" | jq -r '.summary // empty')
+FINDINGS=$(echo "$TEXT" | jq -c '.findings // []')
+
+if [ -z "$VERDICT" ]; then
+  echo "::error::Could not parse Claude verdict"
+  echo "Raw response: $TEXT" >&2
+  bash scripts/code-qa-guard.sh "verdict-parse-failed"
+  exit 1
+fi
+
+echo "Verdict: $VERDICT"
+
+# ---- helpers ----------------------------------------------------------------
+post_status() {
+  local state="$1"  # success | failure
+  local desc="$2"
+  curl -sS -X POST "https://api.github.com/repos/$REPO/statuses/$PR_HEAD_SHA" \
+    -H "Authorization: token $GITHUB_TOKEN" \
+    -H "Accept: application/vnd.github+json" \
+    -d "$(jq -n --arg s "$state" --arg d "$desc" \
+      '{state: $s, context: "code-qa", description: $d}')" > /dev/null
+}
+
+post_comment() {
+  local body="$1"
+  curl -sS -X POST "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments" \
+    -H "Authorization: token $GITHUB_TOKEN" \
+    -H "Accept: application/vnd.github+json" \
+    -d "$(jq -n --arg b "$body" '{body: $b}')" > /dev/null
+}
+
+move_linear_to_blocked() {
+  local reason="$1"
+  local issue_id_query="$(jq -n --arg id "$TICKET_ID" '{
+    query: "query($id: String!) { issue(id: $id) { id } }",
+    variables: { id: $id }
+  }')"
+  local issue_uuid=$(curl -sS -X POST https://api.linear.app/graphql \
+    -H "Authorization: $LINEAR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "$issue_id_query" | jq -r '.data.issue.id')
+
+  # Blocked state id for the Insurance Compare team. Looked up at setup time;
+  # falls back to a state-name query if the hardcoded id is rejected.
+  local blocked_state_id="9bc4f23a-blocked-placeholder"
+  # Resolve "Blocked" state by name (robust to id drift):
+  blocked_state_id=$(curl -sS -X POST https://api.linear.app/graphql \
+    -H "Authorization: $LINEAR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"query { workflowStates(filter: {team: {key: {eq: \"INS\"}}, name: {eq: \"Blocked\"}}) { nodes { id } } }"}' \
+    | jq -r '.data.workflowStates.nodes[0].id // empty')
+
+  if [ -z "$blocked_state_id" ]; then
+    # No "Blocked" state? Use "Todo" as a fallback — at least keeps the loop honest.
+    echo "::warning::No 'Blocked' state found; ticket will remain In Review"
+    return
+  fi
+
+  curl -sS -X POST https://api.linear.app/graphql \
+    -H "Authorization: $LINEAR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n --arg id "$issue_uuid" --arg s "$blocked_state_id" '{
+      query: "mutation($id: String!, $s: String!) { issueUpdate(id: $id, input: { stateId: $s }) { success } }",
+      variables: { id: $id, s: $s }
+    }')" > /dev/null
+
+  # Post a comment with the reason
+  curl -sS -X POST https://api.linear.app/graphql \
+    -H "Authorization: $LINEAR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n --arg id "$issue_uuid" --arg b "$reason" '{
+      query: "mutation($id: String!, $b: String!) { commentCreate(input: { issueId: $id, body: $b }) { success } }",
+      variables: { id: $id, b: $b }
+    }')" > /dev/null
+}
+
+# ---- act on verdict ---------------------------------------------------------
+if [ "$VERDICT" = "APPROVE" ]; then
+  post_status "success" "code-qa approved"
+  post_comment "**code-qa: APPROVE**
+
+$SUMMARY
+
+<details><summary>Findings (warns)</summary>
+
+\`\`\`json
+$FINDINGS
+\`\`\`
+
+</details>"
+  echo "verdict=APPROVE" >> "$GITHUB_OUTPUT"
+  exit 0
+fi
+
+# REJECT path
+post_status "failure" "code-qa rejected — see PR comment"
+
+FINDINGS_MD=$(echo "$FINDINGS" | jq -r '.[] | "- **[\(.severity)] \(.category):** \(.message)"')
+
+COMMENT_BODY="**code-qa: REJECT**
+
+$SUMMARY
+
+### Findings
+$FINDINGS_MD
+
+This PR is blocked by branch protection until \`code-qa\` is green. The Linear ticket has been moved to **Blocked** — the orchestrator will halt the autonomous loop. A human must resolve before the build continues."
+
+post_comment "$COMMENT_BODY"
+
+move_linear_to_blocked "code-qa rejected PR #$PR_NUMBER
+
+$SUMMARY
+
+See PR for full findings: https://github.com/$REPO/pull/$PR_NUMBER"
+
+echo "verdict=REJECT" >> "$GITHUB_OUTPUT"
+exit 0

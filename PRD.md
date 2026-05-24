@@ -404,7 +404,7 @@ Route handler builds Claude content arrays:
     - For each file → document block (PDF) or image block (JPG/PNG/WEBP/GIF)
         ↓
 Single Claude API call
-  Model: claude-sonnet-4-6  ← verify string is current before IC-3
+  Model: claude-sonnet-4-6  ← verify string is current before INS-3
   Input: system prompt (lib/prompt.ts) + content arrays for both policies
   Awaits complete response
         ↓
@@ -509,7 +509,7 @@ INS-1 (project setup)
 | INS-1 | Project setup — Next.js 15, Tailwind v4, shadcn/ui, CLAUDE.md, .env.local | — |
 | INS-2 | Core types, category enum, system prompt | INS-1 |
 | INS-3 | API route — POST /api/analyze, mixed content blocks, JSON response | INS-2 |
-| INS-4 | Upload step — PolicyComposer × 2, file validation, naming | INS-1 |
+| INS-4 | Upload step — PolicyComposer × 2, file validation, naming | INS-2 |
 | INS-5 | Priority step — select top 3 from category enum | INS-4 |
 | INS-6 | Loading screen + analysis view shell | INS-3, INS-5 |
 | INS-7 | Comparison table — rows, badges, expandable quotes, empty + uncertain states | INS-6 |
@@ -540,7 +540,7 @@ A ticket is complete when:
 | Styling | Tailwind CSS v4 |
 | Components | shadcn/ui (new-york style) |
 | Icons | lucide-react |
-| AI | Claude API — claude-sonnet-4-6 (verify string before IC-3) |
+| AI | Claude API — claude-sonnet-4-6 (verify string before INS-3) |
 | PDF + image input | Native Claude document/image content blocks (base64) |
 | State | React useState / useReducer — no external state library |
 | Deployment | None — local only, `npm run dev` |
@@ -561,6 +561,7 @@ A ticket is complete when:
 | D7 | `id` field | Dropped — `category_key` is row identity | Closed enum guarantees uniqueness; no model consistency risk |
 | D8 | Input types | PDF + images (JPG/PNG/WEBP/GIF) + pasted text; mixing allowed | Native Claude support; covers all realistic input scenarios |
 | D9 | `.docx` support | Rejected at attach time | Insurance policies are structured documents; text extraction loses layout and produces silent degradation; PDF export is one click and gives better results |
+| D10 | Build mode for this epic | **Autonomous Epic Mode** per `orchestration.md` §12 | Low-stakes conditions hold: version-controlled, local-only, personal use (1–4×/year), no external users, no production data; worst-case is reverted code on a branch. Supervised first run through INS-1 and INS-2 (Checkpoint A) before releasing the unattended INS-4 → INS-9 window |
 
 ---
 

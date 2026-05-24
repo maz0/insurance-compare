@@ -48,7 +48,7 @@
 - System prompt lives in `lib/prompt.ts` — do not inline prompt logic in the API route
 - Error message strings and accepted file-type constants live in `lib/constants.ts`, keyed by `AppErrorCode` — this is the single owner of what file types are accepted and rejected; do not define accepted types elsewhere
 - File validation logic (type checking, size checking, .docx rejection) lives in `components/upload/PolicyComposer.tsx` — no other component implements it
-- shadcn/ui primitives live in `components/ui/` — do not edit them manually, do not install new ones without a ticket
+- shadcn/ui primitives live in `components/ui/` — do not edit them manually. INS-1 installs the set known to be needed at scaffold time. A later UI ticket may install additional shadcn primitives (and their transitive Radix dependencies) when its acceptance criteria demonstrably require them, **provided the PR description explicitly lists each primitive added and the criterion it serves.** This is the only carve-out to "no new npm dependencies without a ticket that explicitly authorizes them" — non-shadcn dependencies still require a separately-authorizing ticket.
 
 ## Scope rules
 

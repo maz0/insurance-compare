@@ -1,0 +1,69 @@
+name: code-qa
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  statuses: write
+  pull-requests: write
+
+jobs:
+  code-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      verdict: ${{ steps.codeqa.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run code-qa review
+        id: codeqa
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LINEAR_API_KEY:    ${{ secrets.LINEAR_API_KEY }}
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER:         ${{ github.event.pull_request.number }}
+          PR_TITLE:          ${{ github.event.pull_request.title }}
+          PR_HEAD_SHA:       ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA:       ${{ github.event.pull_request.base.sha }}
+          REPO:              ${{ github.repository }}
+        run: bash scripts/code-qa.sh
+
+      - name: Guard — post failure if code-qa did not complete
+        if: always() && steps.codeqa.outcome != 'success'
+        env:
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          LINEAR_API_KEY:    ${{ secrets.LINEAR_API_KEY }}
+          PR_NUMBER:         ${{ github.event.pull_request.number }}
+          PR_TITLE:          ${{ github.event.pull_request.title }}
+          PR_HEAD_SHA:       ${{ github.event.pull_request.head.sha }}
+          REPO:              ${{ github.repository }}
+        run: bash scripts/code-qa-guard.sh "in-job-finalizer"
+
+  # Catastrophic-failure finalizer: runs even if the main job is cancelled,
+  # OOM-killed, or the runner drops before the in-job guard can fire.
+  code-qa-guard:
+    needs: [code-qa]
+    if: always() && (needs.code-qa.result == 'cancelled' || needs.code-qa.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Post failure status (catastrophic guard)
+        env:
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          LINEAR_API_KEY:    ${{ secrets.LINEAR_API_KEY }}
+          PR_NUMBER:         ${{ github.event.pull_request.number }}
+          PR_TITLE:          ${{ github.event.pull_request.title }}
+          PR_HEAD_SHA:       ${{ github.event.pull_request.head.sha }}
+          REPO:              ${{ github.repository }}
+        run: bash scripts/code-qa-guard.sh "catastrophic-finalizer"
