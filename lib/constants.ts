@@ -35,3 +35,28 @@ export const PRIORITY_STEP = {
   selectionCount: (n: number) => `${n} of 3 selected`,
   compareButton: "Compare",
 } as const
+
+export const PRESENCE_LABELS = {
+  a_only: "Only in A",
+  b_only: "Only in B",
+} as const
+
+export const COMPARISON_LABELS = {
+  better: "B wins",
+  worse: "A wins",
+  equal: "Equal",
+} as const
+
+export const COMPARISON_TABLE = {
+  emptyState:
+    "The analysis couldn't extract comparable coverage dimensions from these documents. Check that both inputs contain text-based insurance policy content.",
+  colCategory: "Coverage",
+  colPolicyA: "Policy A",
+  colPolicyB: "Policy B",
+  colPresence: "Presence",
+  colComparison: "Comparison",
+  policyALabel: "Policy A",
+  policyBLabel: "Policy B",
+  pageLabel: "Page:",
+  noEntry: "Not found in this document",
+} as const
