@@ -47,6 +47,15 @@ export const COMPARISON_LABELS = {
   equal: "Equal",
 } as const
 
+export const RECOMMENDATION_CARD = {
+  heading: "Recommendation",
+  verdictSwitch: "Switch to Policy B",
+  verdictStay: "Stay with Policy A",
+  verdictTooClose: "Too close to call",
+  reasonsHeading: "Top reasons",
+  rowLinkLabel: "See row",
+} as const
+
 export const COMPARISON_TABLE = {
   emptyState:
     "The analysis couldn't extract comparable coverage dimensions from these documents. Check that both inputs contain text-based insurance policy content.",
