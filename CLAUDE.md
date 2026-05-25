@@ -58,6 +58,21 @@
 
 ---
 
+## Linear hygiene — labels
+
+When you file **or update** a ticket in Linear, apply the label that matches its nature. Labels are what makes the board readable at a glance — an unlabelled ticket is harder to triage and easier to lose.
+
+Canonical labels for this project:
+
+| Label | Apply to |
+|---|---|
+| `checkpoint` | Tickets that are Checkpoint A, B, or C. The PM agent applies this at ticket-generation time; nobody else adds or removes it. |
+| `bug` | Any ticket filed in response to a defect — QA-caught failures, code-bug sub-loop tickets, regression reports, or anything that fixes broken behavior rather than building new behavior. **Every bug ticket must carry this label**, including bugs the dev agent or QA agent files mid-loop. |
+
+If you need a label that doesn't exist yet, **stop and propose it as a comment on the ticket.** Do not invent new labels unilaterally — that defeats the point of a small, meaningful taxonomy.
+
+---
+
 ## If you are blocked
 
 1. Move the Linear ticket to **Blocked**
