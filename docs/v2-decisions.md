@@ -156,3 +156,17 @@ Only after reading those three, the PM rewrites the relevant `PRD.md` sections a
 - `CLAUDE.md` agent contract and rules — including the `lib/constants.ts` shared-infrastructure carve-out added during the v1 run.
 - The GitHub Actions pipeline (`build`, `code-qa`, `post-merge`, branch protection).
 - All v1-shipped UI primitives that still apply: `ErrorMessage`, `LoadingScreen`, `ComparisonTable`, `RecommendationCard`. They may be edited under v2 tickets but their ownership structure remains.
+
+## v2's risk profile differs from v1 — one note on the autonomous loop
+
+v1 was greenfield: most tickets created new files, ownership was clean, code-QA reviewed self-contained diffs. v2 is **edit-heavy**: `lib/types.ts` loses `priorities`; `lib/prompt.ts` RULE-9 reframes; `app/api/analyze/route.ts`, `ComparisonTable`, `RecommendationCard`, and `lib/categories.ts` may all be touched. That stresses the autonomous gate in two ways v1 didn't surface:
+
+1. A v2 ticket modifying a shared v1 file can regress an existing consumer of that file — something that, by construction, couldn't happen in v1's greenfield mode.
+2. The code-QA agent reviews a PR diff in isolation. It doesn't naturally ask *"does this change break an existing consumer of this file?"* — and in v1 it didn't need to.
+
+**Action for the v2 PM session, before any tickets are written:**
+
+- Flag every v2 ticket that edits a file shipped by v1 — a Linear label `edits-v1-shared-file` (or equivalent). This makes the at-risk set visible to humans at Checkpoint 0 and the autonomous-loop logic if it ever needs to escalate.
+- Confirm `scripts/code-qa.sh`'s checklist explicitly covers a **consumer-impact check** for files in that flag set: *"does this change break an existing consumer of this file?"* If it doesn't, file a small prerequisite ticket (analogous to the `lib/constants.ts` carve-out fix during v1) to update the checklist before the v2 epic starts.
+
+This is not a process redesign — `orchestration.md` is unchanged. It is noting that v2's edit-heavy nature stresses an autonomous gate that worked cleanly under v1's greenfield mode, and the v2 PM session must address the stress before it bites mid-build.
