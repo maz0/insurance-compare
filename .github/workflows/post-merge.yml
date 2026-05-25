@@ -1,0 +1,29 @@
+name: post-merge
+
+# Fires when a PR is closed. We act only on merged PRs (filter below).
+# Uses pull_request_target so the workflow YAML and scripts always come
+# from main — same reasoning as code-qa.yml. Safe here because we make
+# Linear API calls only; no PR code is executed.
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  move-to-done:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Move Linear ticket to Done
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          PR_TITLE:       ${{ github.event.pull_request.title }}
+          PR_NUMBER:      ${{ github.event.pull_request.number }}
+          REPO:           ${{ github.repository }}
+        run: bash scripts/move-to-done.sh

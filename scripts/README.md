@@ -5,8 +5,9 @@ Infrastructure for Autonomous Epic Mode (orchestration.md §12). These are
 
 | File | Purpose |
 |---|---|
-| `code-qa.sh` | The sole quality gate on unattended PRs. Reads PR diff + Linear ticket, calls Claude with the §12.2 expanded checklist, posts `code-qa: success` / `code-qa: failure` status. On REJECT: moves the Linear ticket to Blocked so the orchestrator halts. |
+| `code-qa.sh` | The sole quality gate on unattended PRs. Reads PR diff + Linear ticket + PR body, calls Claude with the §12.2 expanded checklist, posts `code-qa: success` / `code-qa: failure` status. On REJECT: moves the Linear ticket to Blocked so the orchestrator halts. |
 | `code-qa-guard.sh` | Finalizer that posts an explicit `code-qa: failure` status if the main script fails to complete (internal error, timeout, OOM). Prevents the "no status posted, PR stuck forever" failure mode. |
+| `move-to-done.sh` | On PR merge, moves the referenced Linear ticket (parsed from the PR title's `INS-N`) from In Review to Done. Best-effort, never fails the workflow. Only acts on tickets currently in In Review — leaves Blocked/Done/etc. alone. |
 
 ## Required secrets (set in repo Settings → Secrets and variables → Actions)
 
