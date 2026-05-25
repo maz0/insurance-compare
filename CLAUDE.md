@@ -56,6 +56,17 @@
 - No deployment configuration — this project runs locally only
 - No new npm dependencies without a ticket that explicitly authorizes them
 
+### `lib/constants.ts` is shared infrastructure (additive carve-out)
+
+`lib/constants.ts` is the single home for user-facing strings, accepted file types, and similar small constants. To satisfy both this rule and the "no hardcoded UI strings" code rule, **any ticket may add new exported constants to `lib/constants.ts` without it being a scope violation**, under these conditions:
+
+- The edit is **purely additive** — new exports only. No modification or reordering of existing exports. No restructuring of the file.
+- The new constants are limited to what the ticket actually consumes. No speculative additions.
+- Existing rules still apply: `ERROR_MESSAGES` is keyed by `AppErrorCode` and shall not be edited outside that contract; `ACCEPTED_FILE_TYPES` is the single source of accepted file types and is owned by the original ticket.
+- The PR description must briefly mention the additions (one line is enough).
+
+This is the only file with this carve-out. All other "Files owned" rules remain strict.
+
 ---
 
 ## Linear hygiene — labels
