@@ -37,7 +37,7 @@ export function ComparisonRow({ row }: ComparisonRowProps) {
   const categoryLabel = CATEGORY_LABELS[row.category_key]
 
   return (
-    <div className="border-b border-border last:border-b-0">
+    <div id={`row-${row.category_key}`} className="border-b border-border last:border-b-0">
       <button
         type="button"
         className="w-full text-left grid grid-cols-[2fr_1fr_1fr_auto_auto_auto] items-center gap-4 px-4 py-3 hover:bg-muted/50 transition-colors"
