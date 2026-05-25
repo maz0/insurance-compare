@@ -28,3 +28,10 @@ export const LOADING_MESSAGES = [
   "Comparing coverage\u2026",
   "Building recommendation\u2026",
 ] as const
+
+export const PRIORITY_STEP = {
+  heading: "What matters most to you?",
+  subheading: "Select exactly 3 coverage categories to prioritise in the comparison.",
+  selectionCount: (n: number) => `${n} of 3 selected`,
+  compareButton: "Compare",
+} as const
