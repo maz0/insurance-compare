@@ -44,6 +44,11 @@ When a coverage limit is not a number (e.g. "Unlimited", "Full replacement value
 ### [RULE-9] Recommendation reasons must reference rows
 Every "category_key" in "recommendation.reasons" must be a key that also appears in the "rows" array. Do not cite a category in the recommendation that was not extracted as a comparison row.
 
+### [RULE-10] Empty rows when input is not insurance content
+If neither Policy A nor Policy B contains insurance policy content, return "rows": [] and "recommendation.reasons": [].
+Do not use category_key "other" to signal that an input is not an insurance document. "other" is reserved exclusively for insurance content that does not fit any of the defined category keys above.
+When "rows" is empty, "recommendation.reasons" must also be [] (RULE-9 already prohibits reasons that reference absent rows; this rule makes the empty case explicit).
+
 ## Output format
 
 ### [RULE-6] Single JSON object — no markdown, no prose, no code fences
