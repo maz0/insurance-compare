@@ -1,4 +1,5 @@
 import type { AnalysisResult, AppError } from "@/lib/types"
+import { ComparisonTable } from "@/components/analysis/ComparisonTable"
 
 interface AnalysisViewProps {
   result: AnalysisResult | null
@@ -18,10 +19,7 @@ export function AnalysisView({ result, error }: AnalysisViewProps) {
 
   return (
     <div className="flex flex-col gap-8">
-      {/* INS-7: ComparisonTable plugged in here */}
-      <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">
-        Comparison table (INS-7)
-      </div>
+      <ComparisonTable rows={result?.rows ?? []} />
 
       {/* INS-8: RecommendationCard plugged in here */}
       <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">
