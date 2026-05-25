@@ -1,6 +1,7 @@
 import type { AnalysisResult, AppError } from "@/lib/types"
 import { ComparisonTable } from "@/components/analysis/ComparisonTable"
 import { RecommendationCard } from "@/components/analysis/RecommendationCard"
+import { ErrorMessage } from "@/components/shared/ErrorMessage"
 
 interface AnalysisViewProps {
   result: AnalysisResult | null
@@ -9,13 +10,7 @@ interface AnalysisViewProps {
 
 export function AnalysisView({ result, error }: AnalysisViewProps) {
   if (error) {
-    return (
-      <div className="rounded-md border border-red-300 bg-red-50 p-6 text-red-800">
-        <p className="font-semibold">Error</p>
-        <p className="mt-1 text-sm">{error.message}</p>
-        {/* INS-9: ErrorMessage component plugged in here */}
-      </div>
-    )
+    return <ErrorMessage error={error} />
   }
 
   return (
