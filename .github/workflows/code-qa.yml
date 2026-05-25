@@ -1,7 +1,14 @@
 name: code-qa
 
+# Uses pull_request_target so the workflow YAML and scripts/ are always
+# taken from main, not the PR branch. This prevents a PR from modifying
+# its own reviewer. Safe here because code-qa only inspects diff text;
+# it never executes PR code. Do NOT add steps that run PR-provided code
+# (npm install, build, test) under this trigger — that would be a
+# privilege-escalation hole, since pull_request_target runs with full
+# repo permissions and access to secrets. Build runs on `pull_request`.
 on:
-  pull_request:
+  pull_request_target:
     branches: [main]
 
 permissions:
@@ -16,16 +23,16 @@ jobs:
     outputs:
       verdict: ${{ steps.codeqa.outputs.verdict }}
     steps:
+      # Checks out main (the base ref) — gives us scripts/ and CLAUDE.md
+      # from main, not from the PR branch.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # The reviewer scripts must always come from main, not the PR branch —
-      # otherwise a PR that modifies scripts/ could neuter its own reviewer.
-      - name: Use main's reviewer scripts
-        run: |
-          git fetch origin main
-          git checkout origin/main -- scripts/
+      # Fetch the PR's commits so `git diff $BASE..$HEAD` works.
+      # We do NOT check them out — they are read as text via git diff only.
+      - name: Fetch PR head
+        run: git fetch origin "+refs/pull/${{ github.event.pull_request.number }}/head:refs/remotes/pull/${{ github.event.pull_request.number }}/head"
 
       - name: Run code-qa review
         id: codeqa
