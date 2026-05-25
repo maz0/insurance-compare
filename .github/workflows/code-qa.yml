@@ -20,6 +20,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The reviewer scripts must always come from main, not the PR branch —
+      # otherwise a PR that modifies scripts/ could neuter its own reviewer.
+      - name: Use main's reviewer scripts
+        run: |
+          git fetch origin main
+          git checkout origin/main -- scripts/
+
       - name: Run code-qa review
         id: codeqa
         continue-on-error: true
