@@ -1,9 +1,28 @@
+# dependencies
 node_modules/
+
+# next.js
 .next/
+out/
+
+# production
+build/
+
+# env files
 .env.local
 .env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# macOS
 .DS_Store
 
-# Test fixtures — keep local only (don't commit insurance documents)
-platinum.pdf
-*.test.pdf
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
