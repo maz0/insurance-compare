@@ -62,7 +62,17 @@ SavedPolicy {
 }
 ```
 
-PRD implication: §11 (data model) adds `InsuranceProduct` and `SavedPolicy`. §15 (component map) adds saved-set UI.
+### 2a. Open question the PM agent must close — re-extraction policy
+
+`extractedAt` is captured on `SavedPolicy`, but **the PRD must decide what triggers re-extraction**, not leave it to a dev agent to guess mid-build. The questions:
+
+- When a saved policy is loaded into a comparison months after upload, is the stored extraction **reused** (cheap, may be stale if the policy text was somehow re-issued) or **re-run** (always fresh, costs an analyzer API call)?
+- What invalidates a cached extraction? User replacing the PDF in a saved policy is the obvious case — re-extract. Time elapsed past some TTL? Schema change? The PM agent must enumerate the invalidation triggers.
+- If the policy has multiple files, does replacing *one* invalidate the whole `SavedPolicy.extractedAt`?
+
+This is the kind of gap that surfaces as a Blocked ticket mid-build if the v2 PM session leaves it implicit. Close it in the PRD before writing the saved-set tickets.
+
+PRD implication: §11 (data model) adds `InsuranceProduct` and `SavedPolicy`. §13 (request architecture) names the re-extraction policy. §15 (component map) adds saved-set UI.
 
 ---
 
@@ -96,10 +106,12 @@ The v2 PM session must not treat chat as a one-liner UI ticket. It is a feature 
 **Decision:**
 
 - **Model:** Haiku-class — meaningfully cheaper. Chat Q&A over already-extracted content is not the hard reasoning task the original analysis is.
-- **History:** cap at 10–15 turns. Beyond that, summarise older turns into a system message.
+- **History:** cap at 10–15 turns. Beyond that, older turns are compacted. **The compaction mechanism** (who summarises, with which model, with what prompt, preserving what data) **is a chat-ticket architecture decision — see 3a. Not settled here.**
 - **Persistence:** session-only. We do not save chat threads.
 
-PRD implication: §18 (tech stack) lists a second model string. The chat route in §13 is separate from `/api/analyze` and uses the cheaper model.
+**Model-string verification (carry-over from v1):** the exact Haiku model ID (e.g. `claude-haiku-X-Y`) must be sanity-checked against current Anthropic docs before being written into `lib/constants.ts`, the chat route, or anywhere else — same discipline as v1's INS-3, which mandated checking `claude-sonnet-4-6` before hardcoding it. The PM agent and the chat-ticket coder must not guess a model string from memory.
+
+PRD implication: §18 (tech stack) lists a second model string, marked as verified-against-docs. The chat route in §13 is separate from `/api/analyze` and uses the cheaper model.
 
 ---
 
