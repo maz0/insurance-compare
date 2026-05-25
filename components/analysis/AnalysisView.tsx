@@ -1,5 +1,6 @@
 import type { AnalysisResult, AppError } from "@/lib/types"
 import { ComparisonTable } from "@/components/analysis/ComparisonTable"
+import { RecommendationCard } from "@/components/analysis/RecommendationCard"
 
 interface AnalysisViewProps {
   result: AnalysisResult | null
@@ -21,10 +22,12 @@ export function AnalysisView({ result, error }: AnalysisViewProps) {
     <div className="flex flex-col gap-8">
       <ComparisonTable rows={result?.rows ?? []} />
 
-      {/* INS-8: RecommendationCard plugged in here */}
-      <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">
-        Recommendation (INS-8)
-      </div>
+      {result?.recommendation && (
+        <RecommendationCard
+          recommendation={result.recommendation}
+          rows={result.rows}
+        />
+      )}
     </div>
   )
 }
