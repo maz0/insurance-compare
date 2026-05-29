@@ -2,7 +2,28 @@
 
 These decisions answer the open product questions raised at the end of the v1 epic (INS-1..INS-12). They are the inputs the PM agent must read **before** rewriting `PRD.md` for v2 or generating the v2 ticket map.
 
-Source: PM/human discussion after Checkpoint C sign-off, refined with two rounds of outside review.
+Source: PM/human discussion after Checkpoint C sign-off, refined with three rounds of outside review.
+
+---
+
+## Architecture forks resolved (read before everything)
+
+Two forks were resolved in the v2 planning round. They **delete** several sections below — read this first so you don't act on superseded text.
+
+1. **Extraction — fresh each time.** No per-policy cache. Every comparison sends full PDFs (saved policy + offer) to the existing pairwise analyzer. A summary is lossier than the source; giving the comparator full documents every time is strictly higher quality, and the ~60–90s cost is invisible at 1–4×/year. Caching is an optimization for a system that runs hot; this one runs cold.
+
+2. **Persistence — local (SQLite + filesystem), not cloud.** The Next.js server process owns a SQLite file plus a documents folder on the machine.
+
+**Consequences — these are deletions, not deferrals:**
+
+- **Decision 2a (re-extraction policy) is DELETED.** With fresh-each-time analysis there is no stored extraction, so there is nothing to re-extract or invalidate. Do not resurface this — it has no referent in this design.
+- **Decision 1a (privacy reversal) is DELETED.** Local persistence *preserves* v1's stance: documents stay on the machine, nothing logged. v2 inherits the existing privacy posture unchanged — no new privacy section, no "what if multi-user" footnote.
+- `SavedPolicy.extractedAt` is dropped (no cache to timestamp).
+- Cloud apparatus — Supabase, auth, credentials, network failure modes — all DELETED. None of it is in v2.
+
+**"Local" means this server process on this machine** owns the SQLite file (via e.g. `better-sqlite3`) and a documents folder — NOT client-side/browser storage like localStorage. v1 already runs as a local Next.js server with API routes, so this is the natural shape. If v2 ever had to run as a static browser-only app this would change; it won't.
+
+Where any section below conflicts with this block, **this block wins.** Sections 1, 1a, 2, and 2a are updated to match.
 
 ---
 
@@ -20,23 +41,23 @@ v1 compared two arbitrary policies side-by-side. v2 introduces a saved set of ma
 
 ---
 
-## 1. Persistence — real backend, not localStorage
+## 1. Persistence — local SQLite + filesystem (RESOLVED: not cloud)
 
-The v2 premise ("your current insurance is already loaded when you open the site") *requires* real persistence. localStorage caps at ~5MB which doesn't fit even one or two PDFs; defaulting to it would deliver a half-feature that forgets the documents between sessions.
+The v2 premise ("your current insurance is already loaded when you open the site") requires persistence across sessions. localStorage can't hold PDFs (~5MB cap), but the v1 tool already runs as a local Next.js server — so the server process can own a local store directly.
 
-**Decision:** a lightweight managed backend (Supabase or equivalent) — the honest answer for a personal tool that needs to remember uploaded PDFs across sessions.
+**Decision:** local persistence — **SQLite** (saved-policy metadata) + the **local filesystem** (the PDF blobs), owned by the Next.js server process. No cloud backend.
 
-PRD implication: §18 (tech stack) adds a backend. `.env.local` gains backend credentials. A new ticket adds the schema and a thin data-access layer; document storage is a separate concern from the analyzer.
+This matches v1's D6 (local-only) and preserves the v1 privacy stance (see 1a). It needs no account, no auth, no credentials, and adds no network failure modes the analyzer didn't already have.
 
-### 1a. Privacy posture — explicit reversal of v1's stance
+PRD implication: §18 (tech stack) adds SQLite (e.g. `better-sqlite3`) + a documents folder. §15 adds a thin `lib/db/` data-access layer. No `.env.local` additions for storage. Document storage is a separate concern from the analyzer.
 
-v1 explicitly stated "no saving, no logging, document contents never persisted." v2 **deliberately reverses this for the saved set**: insurance PDFs (personal data) are now stored in the backend at rest. This is not a side-effect of "add a backend" — it's a deliberate change to the security stance and the PRD must say so.
+### 1a. Privacy posture — DELETED (local persistence preserves v1's stance)
 
-**Decision:** for a single-user personal tool, persisted PDFs in a managed backend (encrypted at rest, single-tenant, user-initiated deletion) are acceptable. **This stance does not generalize.** If this tool ever opens to other users, the PRD must re-examine: data isolation between tenants, encryption-in-transit boundaries, retention policy, the right-to-delete flow, and what the analyzer's "no market knowledge" guarantee means when documents from many users coexist.
+This section originally documented a privacy *reversal* on the assumption of a cloud backend. With local persistence (decision 1, resolved), **there is no reversal.** Documents stay on the machine exactly as in v1; nothing is logged; no data leaves the device. v2 inherits v1's privacy stance unchanged.
 
-**Carried forward from v1:** the rule "never log document contents or extracted quotes" still applies. *Logs* don't change — only *storage at rest* does. The `code-qa` checklist's security section still enforces no-logging.
+There is no new privacy section to write, no "what if multi-user" footnote, no encryption-in-transit boundary to define. The only persistence change versus v1 is that documents now live in a local SQLite/filesystem store instead of being discarded after the request — still on the machine, still private.
 
-**PRD implication:** §18 (tech stack) names the backend. A new security section (or expansion of the existing one) states explicitly: PDFs are personal data at rest; access is single-user; deletion is user-initiated and complete. The reversal from v1 is named, not silent.
+**Carried forward from v1, unchanged:** "never log document contents or extracted quotes." The `code-qa` security checklist still enforces it.
 
 ---
 
@@ -51,28 +72,23 @@ Do not merge them.
 
 **Nuance — model saved policies as a list, not a fixed slot per product:** a person can have two car policies from different companies (`car 1 / Folksam`, `car 2 / If`). The saved unit is therefore **a list of policies, each tagged with an `InsuranceProduct`** — never "one policy per product."
 
-Sketch:
+Sketch (updated — `extractedAt` removed per the fresh-each-time resolution):
 ```
 SavedPolicy {
   id: string
   product: InsuranceProduct
   name: string          // user-given, e.g. "Volvo XC60 — Folksam"
-  files: SavedFile[]    // PDFs the user uploaded
-  extractedAt: Date     // when the analyzer last summarised it
+  files: SavedFile[]    // PDFs the user uploaded, stored locally
+  createdAt: Date       // when the policy was saved
 }
 ```
+No `extractedAt`: there is no per-policy extraction to timestamp. Each comparison re-reads the files fresh.
 
-### 2a. Open question the PM agent must close — re-extraction policy
+### 2a. Re-extraction policy — DELETED (not deferred)
 
-`extractedAt` is captured on `SavedPolicy`, but **the PRD must decide what triggers re-extraction**, not leave it to a dev agent to guess mid-build. The questions:
+This section originally posed re-extraction as an open question. With fresh-each-time analysis (resolved above), **it has no referent**: nothing is cached, so nothing can go stale, so there is no re-extraction or invalidation decision to make. The question is deleted, not deferred — do not resurface it.
 
-- When a saved policy is loaded into a comparison months after upload, is the stored extraction **reused** (cheap, may be stale if the policy text was somehow re-issued) or **re-run** (always fresh, costs an analyzer API call)?
-- What invalidates a cached extraction? User replacing the PDF in a saved policy is the obvious case — re-extract. Time elapsed past some TTL? Schema change? The PM agent must enumerate the invalidation triggers.
-- If the policy has multiple files, does replacing *one* invalidate the whole `SavedPolicy.extractedAt`?
-
-This is the kind of gap that surfaces as a Blocked ticket mid-build if the v2 PM session leaves it implicit. Close it in the PRD before writing the saved-set tickets.
-
-PRD implication: §11 (data model) adds `InsuranceProduct` and `SavedPolicy`. §13 (request architecture) names the re-extraction policy. §15 (component map) adds saved-set UI.
+PRD implication (revised): §11 (data model) adds `InsuranceProduct` and `SavedPolicy`. §15 (component map) adds saved-set UI. §13 states plainly that every comparison re-reads the saved policy's files — there is no extraction cache.
 
 ---
 
