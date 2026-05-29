@@ -117,17 +117,22 @@ The v2 PM session must not treat chat as a one-liner UI ticket. It is a feature 
 
 ---
 
-## 4. Chat model and history — Haiku-class, capped, session-only
+## 4. Chat model and history — Sonnet, full-document grounding (OVERRIDE of the original Haiku call)
 
-**Decision:**
+**Original decision (superseded):** Haiku-class, on the assumption chat was thin Q&A over the already-extracted comparison result.
 
-- **Model:** Haiku-class — meaningfully cheaper. Chat Q&A over already-extracted content is not the hard reasoning task the original analysis is.
-- **History:** cap at 10–15 turns. Beyond that, older turns are compacted. **The compaction mechanism** (who summarises, with which model, with what prompt, preserving what data) **is a chat-ticket architecture decision — see 3a. Not settled here.**
+**Override (this planning round) — recorded explicitly, not silently switched:** chat grounds on the **full policy PDFs every turn** (see PRD §13.2 / Call 2), not on the extracted result. That changes the workload — chat now reasons over the full documents, the same task class as the analyzer — so the model must match the work.
+
+- **Model:** `claude-sonnet-4-6` — same as the analyzer. Its 1M-token context also makes "will the documents fit" a non-issue for any realistic insurance PDF set. At ~4×/year usage, capability is the axis, not cost (cost shown below).
+- **History:** cap at 10–15 turns. Fallback when history + documents approach the context limit: **drop the oldest chat turns first; never drop the documents.** The documents are the grounding; losing them defeats the feature. No summarisation step.
 - **Persistence:** session-only. We do not save chat threads.
+- **Caching:** the documents use prompt caching (write once per session, cheap reads thereafter) — see cost note.
 
-**Model-string verification (carry-over from v1):** the exact Haiku model ID (e.g. `claude-haiku-X-Y`) must be sanity-checked against current Anthropic docs before being written into `lib/constants.ts`, the chat route, or anywhere else — same discipline as v1's INS-3, which mandated checking `claude-sonnet-4-6` before hardcoding it. The PM agent and the chat-ticket coder must not guess a model string from memory.
+**Cost (shown, per Call 2):** Sonnet $3/MTok in, $15/MTok out. Two policy PDFs ≈ 150k tokens, ~15 turns. Realistic **~$5–7/session** (pauses >5 min commonly bust the 5-min cache); ~$1.40 best case with rapid turns; ≤ ~$28/yr at 4× either bound. Negligible. The chat ticket (INS-19) must also verify the `cache_control` implementation against current Anthropic docs — same discipline as the model-string check.
 
-PRD implication: §18 (tech stack) lists a second model string, marked as verified-against-docs. The chat route in §13 is separate from `/api/analyze` and uses the cheaper model.
+**Model-string verification (carry-over from v1):** `claude-sonnet-4-6` verified against Anthropic docs 2026-05-29. Re-verify before the chat ticket (INS-19), same discipline as v1's INS-3.
+
+PRD implication: §18 lists the chat model as `claude-sonnet-4-6` (same as analyzer). §13.2 specifies full-PDF grounding every turn, document caching, and the oldest-turn-drop fallback.
 
 ---
 
