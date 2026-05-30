@@ -475,12 +475,31 @@ the entire bar. This has two consequences that are not optional:
 A shallow code-QA agent does not make autonomous mode faster — it removes the
 gate and replaces it with nothing.
 
-### 12.3 Checkpoint tickets — hard stops
+### 12.3 Checkpoint tickets — hard stops + verification artifact
 
 Some tickets carry decisions an agent cannot safely self-certify. These are
-**checkpoint tickets**. The orchestrator **halts** when it reaches one — it does
-not start it, build it, or merge anything. The human then reviews, and releases
-the loop with a single action.
+**checkpoint tickets**. The pattern at each checkpoint:
+
+1. The dev sub-agent builds the ticket and opens a PR (auto-merge enabled, same
+   as a non-checkpoint ticket).
+2. The build and code-QA gates run. **For checkpoint tickets, code-QA additionally
+   posts a structured verification comment on the PR** — criterion-by-criterion,
+   each criterion getting ✅/❌, a literal quoted code/config excerpt, and one
+   sentence of plain English. For tickets that modify a prompt file
+   (`lib/prompt.ts`), the comment quotes the **full before/after** of the
+   affected system prompt(s) side by side — prose regressions are the kind
+   structural review can miss, and the English text needs a human read.
+3. The human reviews the **verification comment** as the checkpoint pass — not
+   the raw diff. The artifact is what makes the gate honest about what a
+   non-developer can actually verify. Reading this comment IS Checkpoint A / B / C.
+4. The orchestrator HALTS at the checkpoint. To release the loop, the human
+   moves the next eligible ticket(s) to **Todo** in the ticket tracker. The
+   move is the signal; there is no other "approve" action.
+
+The earlier phrasing "the orchestrator does not start it, build it, or merge
+anything" was too strict — the verification artifact is more useful than gating
+the build, and a non-developer cannot judge a raw diff anyway. The hard-stop is
+on **what fires next**, not on building the checkpoint ticket itself.
 
 Which tickets are checkpoints is **derived from the PRD's checkpoints** (Part 5)
 and tagged in the ticket tracker before the run. For a typical build:
@@ -488,18 +507,29 @@ and tagged in the ticket tracker before the run. For a typical build:
 | Checkpoint ticket | Why it is a hard stop |
 |---|---|
 | The type/prompt-contract ticket (Checkpoint A) | Highest-leverage artifact; everything downstream consumes it. The prompt's rule-traceability table needs a human read. |
-| The first model-integration ticket (Checkpoint B) | First time the contract meets a real model response. |
+| The first model-integration ticket (Checkpoint B) | First time the contract meets a real model response. **Higher stakes when the prompt is being *changed* rather than newly built** — surviving prose can silently corrupt behaviour. |
 | The final QA ticket (Checkpoint C) | This is the human functional pass — see 12.6. It is a human task, not an agent task. |
-| *(Optional)* The first ticket that renders real product output | First chance to look at the actual UI. Not a formal gate, but a natural place for a human glance. |
 
-This yields roughly **3–4 human reviews across an entire epic** instead of one per
-ticket. The human reviews where judgment is required and nowhere else; the
+This yields roughly **3–4 human reviews across an entire epic** instead of one
+per ticket. The human reviews where judgment is required and nowhere else; the
 mechanical tickets between checkpoints run unattended.
 
-A run therefore looks like: *overnight* — orchestrator builds the tickets up to
-the next checkpoint and parks; *morning* — human does that one checkpoint review
-and releases the loop; *repeat*. The human never reviews at 1am and never reviews
-a mechanical ticket individually.
+### 12.3a Mid-build functional QA milestone (soft checkpoint)
+
+Pick the first ticket in the dependency chain whose merge makes the user flow
+**clickable end-to-end**, even if half the surface is missing. After it merges,
+the orchestrator HALTS for a **soft checkpoint**: the human runs the half-built
+app, exercises the flow, and either posts feedback (new tickets / PR comments)
+or releases the loop.
+
+This catches drift between the ticket map and what the app actually does, far
+earlier than waiting for the final Checkpoint C QA pass. The verification comment
+pattern is text-level; the soft checkpoint is behaviour-level. They cover
+different failure modes.
+
+The milestone ticket is identified at **Checkpoint 0** (alongside the hard
+checkpoints) and tagged in the ticket tracker (`mid-build-qa` or equivalent).
+The human always performs it; the orchestrator never auto-releases past it.
 
 ### 12.4 Code-bug sub-loop (automated fixing — code bugs only)
 
@@ -532,7 +562,10 @@ burning tokens. Two attempts, then a human looks.
 
 The orchestrator stops the run — and waits for a human — on any of:
 
-- **Checkpoint reached** — a checkpoint ticket is next (12.3).
+- **Checkpoint reached** — a checkpoint ticket is next, or has just merged with
+  the verification comment posted (12.3).
+- **Mid-build QA milestone reached** — the soft-checkpoint ticket just merged;
+  the half-built app is now clickable and waiting on the human's hands-on pass (12.3a).
 - **Ticket Blocked** — a dev agent hit ambiguity and moved its ticket to Blocked.
   The whole loop halts, not just that agent: a blocked ticket usually has
   dependents, and skipping ahead would build on an unfinished foundation.
@@ -549,7 +582,7 @@ and what the human needs to do. The morning review starts from that message.
 Autonomous mode does **not** automate these. They remain human, exactly as in the
 standard process:
 
-- **Checkpoint reviews** (A, B, and any optional ones) — the 3–4 reviews in 12.3.
+- **Checkpoint reviews** (A, B, C, plus the mid-build QA milestone in 12.3a) — reading the verification comment for each hard checkpoint and running the app for the soft one.
 - **Functional QA** — running the actual application and judging whether it
   behaves and looks correct. No agent does this. The final QA ticket is a human
   ticket. Automated checks (build, types, assertions) are not functional QA and

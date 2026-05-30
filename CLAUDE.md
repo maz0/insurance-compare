@@ -84,6 +84,38 @@ If you need a label that doesn't exist yet, **stop and propose it as a comment o
 
 ---
 
+## PR evidence checklist — required on every PR
+
+Every PR opened against `main` (not just checkpoint tickets) **must** include a structured **Evidence checklist** section in the PR description. For each numbered acceptance criterion on the ticket:
+
+- The criterion (numbered, as written on the ticket).
+- ✅ or ❌ — your honest read of whether you met it.
+- A literal quote (fenced code block) of the code, config, or output that proves it. Short — a few lines.
+- One sentence of plain English confirming what the quote shows.
+
+This is what makes the PR readable by a non-developer and honest about what was actually built. It is not optional. A PR opened without this section is incomplete and code-QA must REJECT it as scope-incomplete.
+
+Format example:
+
+> ### Evidence checklist
+>
+> **AC1 — `InsuranceProduct` exports 10 values.** ✅
+>
+> ```ts
+> // lib/products.ts
+> export type InsuranceProduct =
+>   | "car" | "home" | "contents" | "travel" | "pet"
+>   | "child" | "accident" | "life" | "health" | "other"
+> ```
+>
+> Matches PRD §7.1 exactly: 10 values in the listed order.
+>
+> *(continue for every numbered criterion on the ticket)*
+
+For **checkpoint tickets** specifically: in addition to this PR-author checklist, the code-QA agent posts an independent **verification comment** going criterion-by-criterion with its own quoted evidence. The human reviews that comment as the Checkpoint pass (see `orchestration.md` §12.3).
+
+---
+
 ## If you are blocked
 
 1. Move the Linear ticket to **Blocked**

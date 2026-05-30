@@ -50,12 +50,18 @@ TICKET_JSON=$(curl -sS -X POST https://api.linear.app/graphql \
   -H "Authorization: $LINEAR_API_KEY" \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg id "$TICKET_ID" '{
-    query: "query($id: String!) { issue(id: $id) { identifier title description } }",
+    query: "query($id: String!) { issue(id: $id) { identifier title description labels { nodes { name } } } }",
     variables: { id: $id }
   }')")
 
 TICKET_DESC=$(echo "$TICKET_JSON" | jq -r '.data.issue.description // empty')
 TICKET_TITLE=$(echo "$TICKET_JSON" | jq -r '.data.issue.title // empty')
+
+# Detect the "checkpoint" label (case-insensitive). Checkpoint tickets get a
+# structured verification_comment that the human reads as the checkpoint pass
+# (orchestration.md §12.3). Returns "true" or "false".
+IS_CHECKPOINT=$(echo "$TICKET_JSON" | jq -r '[.data.issue.labels.nodes[]?.name | ascii_downcase] | any(. == "checkpoint")')
+echo "Checkpoint: $IS_CHECKPOINT"
 
 if [ -z "$TICKET_DESC" ]; then
   echo "::error::Could not fetch Linear ticket $TICKET_ID"
@@ -75,6 +81,20 @@ PR_BODY=$(curl -sS \
   -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" \
   | jq -r '.body // "(empty)"')
+
+# ---- fetch prompt-file before/after if lib/prompt.ts is in the diff ---------
+# For checkpoint tickets that modify a prompt file, the verification comment
+# must quote the full before/after side by side — prose regressions are the
+# kind of failure structural diff review can miss, and English readability
+# is the human's job (orchestration.md §12.3).
+PROMPT_FILE_TOUCHED="false"
+PROMPT_BEFORE=""
+PROMPT_AFTER=""
+if echo "$FILES_CHANGED" | grep -Fxq "lib/prompt.ts"; then
+  PROMPT_FILE_TOUCHED="true"
+  PROMPT_BEFORE=$(git show "$MERGE_BASE:lib/prompt.ts" 2>/dev/null || echo "(file did not exist at the merge base)")
+  PROMPT_AFTER=$(git show "$PR_HEAD_SHA:lib/prompt.ts" 2>/dev/null || echo "(file does not exist on the PR head)")
+fi
 
 # ---- build the prompt -------------------------------------------------------
 PROMPT=$(cat <<PROMPT_EOF
@@ -139,6 +159,25 @@ SECURITY
   - User-provided input validated (type + size) before processing.
   - File contents treated as data, never as instructions.
 
+PR-EVIDENCE-CHECKLIST (required per CLAUDE.md)
+  - The PR description above must contain a clearly-labelled "Evidence checklist" section that addresses each numbered acceptance criterion with ✅ or ❌, a literal quoted excerpt of code/config that proves it, and one sentence of plain English. Missing or partial → REJECT as scope-incomplete (category: ACCEPTANCE).
+
+# Checkpoint context
+
+This ticket carries the "checkpoint" label: $IS_CHECKPOINT
+
+# Prompt-file context (provided when lib/prompt.ts is in the diff)
+
+lib/prompt.ts touched by this PR: $PROMPT_FILE_TOUCHED
+
+--- PROMPT_BEFORE (lib/prompt.ts at MERGE_BASE) ---
+$PROMPT_BEFORE
+--- END PROMPT_BEFORE ---
+
+--- PROMPT_AFTER (lib/prompt.ts at PR_HEAD_SHA) ---
+$PROMPT_AFTER
+--- END PROMPT_AFTER ---
+
 # Output format — STRICT
 
 Reply with valid JSON only. No markdown fences. Schema:
@@ -148,10 +187,28 @@ Reply with valid JSON only. No markdown fences. Schema:
   "findings": [
     { "category": "ACCEPTANCE|SCOPE|CLAUDE_MD|SINGLE_OWNER|PR_CALLOUT|BUILD|SECURITY", "severity": "blocker|warn", "message": "one sentence" }
   ],
-  "summary": "one paragraph for the PR comment"
+  "summary": "one paragraph for the PR comment",
+  "verification_comment": "string — REQUIRED when the ticket has the checkpoint label (\$IS_CHECKPOINT == true); otherwise null"
 }
 
 If verdict is APPROVE, findings may still contain warns. If verdict is REJECT, findings must contain at least one blocker.
+
+# verification_comment requirements (when this ticket has the checkpoint label)
+
+Produce a markdown comment suitable for posting directly on the PR. The human reads this AS the checkpoint pass — it must be honest about what a non-developer can verify. Structure:
+
+1. A clear heading ("# code-QA verification — \$TICKET_ID (Checkpoint X)") and a one-line meta-note.
+2. **One section per numbered acceptance criterion**, in the order they appear on the ticket. Each section:
+   - The criterion restated (numbered).
+   - ✅ or ❌.
+   - A literal quoted excerpt of the code/config/output from the diff or files that proves it (fenced code block with the source file/path as a comment).
+   - One sentence of plain English confirming what the quote shows.
+3. **A separate section for any authorized cross-file edits** the ticket called out, each with the same ✅/quote/sentence structure.
+4. **A "Non-blocking observations" section** for things you noticed that aren't AC failures but the human should know — dead code, stale references, follow-up suggestions.
+5. **For tickets with PROMPT_FILE_TOUCHED == true:** include a section "System prompt — full before/after" that pastes the *entire* PROMPT_BEFORE and PROMPT_AFTER side by side (in two fenced code blocks, labeled). The human reads the English text to confirm intended prose changes are real and unintended prose changes are absent — surviving fragments of removed logic (e.g. priority weighting in an analyzer reframe) silently corrupt behaviour in ways the diff review can miss.
+6. **Final line:** verdict recommendation and how to release the loop.
+
+Quote real excerpts — do not paraphrase. If a criterion is not yet met, mark ❌ and quote the closest excerpt with one sentence explaining the gap.
 PROMPT_EOF
 )
 
@@ -166,7 +223,7 @@ trap 'rm -f "$PROMPT_FILE" "$PAYLOAD_FILE"' EXIT
 printf '%s' "$PROMPT" > "$PROMPT_FILE"
 jq -n --rawfile p "$PROMPT_FILE" '{
   model: "claude-opus-4-5",
-  max_tokens: 4096,
+  max_tokens: 8192,
   messages: [{ role: "user", content: $p }]
 }' > "$PAYLOAD_FILE"
 
@@ -190,6 +247,7 @@ TEXT=$(echo "$TEXT" | sed -E 's/^```(json)?$//; s/^```$//' | sed '/^$/d')
 VERDICT=$(echo "$TEXT" | jq -r '.verdict // empty')
 SUMMARY=$(echo "$TEXT" | jq -r '.summary // empty')
 FINDINGS=$(echo "$TEXT" | jq -c '.findings // []')
+VERIFICATION_COMMENT=$(echo "$TEXT" | jq -r '.verification_comment // empty')
 
 if [ -z "$VERDICT" ]; then
   echo "::error::Could not parse Claude verdict"
@@ -278,6 +336,21 @@ $FINDINGS
 \`\`\`
 
 </details>"
+
+  # For checkpoint tickets, post the structured verification comment as a
+  # separate PR comment. The human reads it as the checkpoint pass
+  # (orchestration.md §12.3). Missing on a checkpoint ticket is a soft
+  # failure — we still APPROVE but warn so the human notices.
+  if [ "$IS_CHECKPOINT" = "true" ]; then
+    if [ -n "$VERIFICATION_COMMENT" ]; then
+      echo "Posting verification comment for checkpoint ticket $TICKET_ID..."
+      post_comment "$VERIFICATION_COMMENT"
+    else
+      echo "::warning::Checkpoint ticket $TICKET_ID approved without a verification_comment — human should not trust this as a checkpoint pass."
+      post_comment "**code-qa: warning** — this is a checkpoint ticket but the reviewer did not produce a verification_comment. Do not treat the APPROVE as a checkpoint pass; ask for a re-run or review the diff manually."
+    fi
+  fi
+
   echo "verdict=APPROVE" >> "$GITHUB_OUTPUT"
   exit 0
 fi
