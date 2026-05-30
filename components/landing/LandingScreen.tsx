@@ -8,9 +8,10 @@ import type { AppStep, SavedPolicy } from "@/lib/types"
 interface LandingScreenProps {
   savedPolicies: SavedPolicy[]
   onTransition: (step: AppStep) => void
+  onCompareOffer: (policyId: string) => void
 }
 
-export function LandingScreen({ savedPolicies, onTransition }: LandingScreenProps) {
+export function LandingScreen({ savedPolicies, onTransition, onCompareOffer }: LandingScreenProps) {
   const hasPolicies = savedPolicies.length > 0
 
   return (
@@ -22,11 +23,8 @@ export function LandingScreen({ savedPolicies, onTransition }: LandingScreenProp
 
       {hasPolicies ? (
         <>
-          <SavedPolicyList />
+          <SavedPolicyList savedPolicies={savedPolicies} onCompareOffer={onCompareOffer} />
           <div className="flex gap-3">
-            <Button type="button" onClick={() => onTransition("compose_offer")}>
-              {LANDING.compareOfferButton}
-            </Button>
             <Button type="button" variant="outline" onClick={() => onTransition("manage_policies")}>
               {LANDING.managePoliciesButton}
             </Button>

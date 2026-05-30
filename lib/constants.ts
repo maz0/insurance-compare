@@ -87,14 +87,7 @@ export const POLICY_CARD = {
   fileCountPlural: (n: number) => `${n} files`,
   editAriaLabel: (name: string) => `Edit ${name}`,
   deleteAriaLabel: (name: string) => `Delete ${name}`,
-} as const
-
-export const CHAT_PANEL = {
-  heading: "Ask a question",
-  inputPlaceholder: "Ask about these policies…",
-  sendButton: "Send",
-  sendingButton: "Sending…",
-  emptyState: "Ask anything about the two policies — answers are grounded strictly in the documents above.",
+  compareOfferButton: "Compare an offer",
 } as const
 
 export const POLICY_FORM = {

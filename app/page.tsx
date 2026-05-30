@@ -92,6 +92,13 @@ export default function Home() {
     setState((prev) => ({ ...prev, step }))
   }
 
+  // Atomic update: sets both currentPolicyId and step in one call so the state
+  // machine never exposes an intermediate where step === "compose_offer" and
+  // currentPolicyId === null. This is a hard invariant per AC1.
+  function handleCompareOffer(policyId: string) {
+    setState((prev) => ({ ...prev, currentPolicyId: policyId, step: "compose_offer" }))
+  }
+
   async function handleAdhocCompare(policyA: PolicyInput, policyB: PolicyInput) {
     setState((prev) => ({
       ...prev,
@@ -137,7 +144,11 @@ export default function Home() {
     case "landing":
       return (
         <main className="mx-auto max-w-5xl px-6 py-10">
-          <LandingScreen savedPolicies={savedPolicies} onTransition={handleTransition} />
+          <LandingScreen
+            savedPolicies={savedPolicies}
+            onTransition={handleTransition}
+            onCompareOffer={handleCompareOffer}
+          />
         </main>
       )
 
