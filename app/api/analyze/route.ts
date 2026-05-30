@@ -8,8 +8,7 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages/messages"
 import { SYSTEM_PROMPT, buildUserPrompt } from "@/lib/prompt"
 import { ERROR_MESSAGES, ACCEPTED_FILE_TYPES } from "@/lib/constants"
-import type { AnalysisResult, AppError } from "@/lib/types"
-import type { CategoryKey } from "@/lib/categories"
+import type { AnalysisResult, AppError, ComparisonMode } from "@/lib/types"
 
 const MODEL = "claude-sonnet-4-6"
 
@@ -31,7 +30,7 @@ interface PolicyBody {
 interface RequestBody {
   policy_a: PolicyBody
   policy_b: PolicyBody
-  priorities: CategoryKey[]
+  mode: ComparisonMode
 }
 
 function buildContentBlocks(policy: PolicyBody): ContentBlockParam[] {
@@ -90,7 +89,7 @@ export async function POST(req: NextRequest) {
   const policyABlocks = buildContentBlocks(body.policy_a)
   const policyBBlocks = buildContentBlocks(body.policy_b)
 
-  const userPromptText = buildUserPrompt(body.policy_a.name, body.policy_b.name)
+  const userPromptText = buildUserPrompt(body.policy_a.name, body.policy_b.name, body.mode)
 
   const userContent: ContentBlockParam[] = [
     { type: "text", text: userPromptText },
