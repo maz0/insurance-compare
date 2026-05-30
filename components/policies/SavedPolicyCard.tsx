@@ -10,9 +10,10 @@ interface SavedPolicyCardProps {
   policy: SavedPolicy
   onEdit: (policy: SavedPolicy) => void
   onDelete: (id: string) => void
+  onCompareOffer?: (policyId: string) => void
 }
 
-export function SavedPolicyCard({ policy, onEdit, onDelete }: SavedPolicyCardProps) {
+export function SavedPolicyCard({ policy, onEdit, onDelete, onCompareOffer }: SavedPolicyCardProps) {
   return (
     <div className="flex items-center justify-between rounded-lg border border-border bg-white px-4 py-3">
       <div className="flex flex-col gap-0.5">
@@ -27,6 +28,16 @@ export function SavedPolicyCard({ policy, onEdit, onDelete }: SavedPolicyCardPro
         </span>
       </div>
       <div className="flex items-center gap-1">
+        {onCompareOffer !== undefined && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onCompareOffer(policy.id)}
+          >
+            {POLICY_CARD.compareOfferButton}
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"

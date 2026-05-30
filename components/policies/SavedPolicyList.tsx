@@ -15,9 +15,14 @@ import { ErrorMessage } from "@/components/shared/ErrorMessage"
 import { POLICY_LIST, ERROR_MESSAGES } from "@/lib/constants"
 import type { AppError, SavedPolicy } from "@/lib/types"
 
-export function SavedPolicyList() {
-  const [policies, setPolicies] = useState<SavedPolicy[]>([])
-  const [loading, setLoading] = useState(true)
+interface SavedPolicyListProps {
+  savedPolicies?: SavedPolicy[]
+  onCompareOffer?: (policyId: string) => void
+}
+
+export function SavedPolicyList({ savedPolicies: propPolicies, onCompareOffer }: SavedPolicyListProps = {}) {
+  const [policies, setPolicies] = useState<SavedPolicy[]>(propPolicies ?? [])
+  const [loading, setLoading] = useState(propPolicies === undefined)
   const [error, setError] = useState<AppError | null>(null)
 
   // Dialog state
@@ -25,6 +30,7 @@ export function SavedPolicyList() {
   const [editingPolicy, setEditingPolicy] = useState<SavedPolicy | undefined>(undefined)
 
   const loadPolicies = useCallback(async () => {
+    if (propPolicies !== undefined) return
     setLoading(true)
     setError(null)
     try {
@@ -44,11 +50,16 @@ export function SavedPolicyList() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [propPolicies])
 
   useEffect(() => {
+    if (propPolicies !== undefined) {
+      setPolicies(propPolicies)
+      setLoading(false)
+      return
+    }
     void loadPolicies()
-  }, [loadPolicies])
+  }, [loadPolicies, propPolicies])
 
   function handleAdd() {
     setEditingPolicy(undefined)
@@ -107,6 +118,7 @@ export function SavedPolicyList() {
                 policy={policy}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                onCompareOffer={onCompareOffer}
               />
             </li>
           ))}

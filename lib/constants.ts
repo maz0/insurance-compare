@@ -87,6 +87,7 @@ export const POLICY_CARD = {
   fileCountPlural: (n: number) => `${n} files`,
   editAriaLabel: (name: string) => `Edit ${name}`,
   deleteAriaLabel: (name: string) => `Delete ${name}`,
+  compareOfferButton: "Compare an offer",
 } as const
 
 export const POLICY_FORM = {
@@ -101,4 +102,31 @@ export const POLICY_FORM = {
   errorNameRequired: "Please enter a name for this policy.",
   errorProductRequired: "Please select an insurance type.",
   errorSaveFailed: "Couldn't save your policy. Please try again.",
+} as const
+
+export const LANDING = {
+  heading: "Insurance Compare",
+  subheading: "Compare your insurance policies to find the best coverage.",
+  compareOfferButton: "Compare an offer",
+  managePoliciesButton: "Manage policies",
+  addFirstButton: "Add my current insurance",
+  adhocButton: "Quick ad-hoc compare",
+  backToLanding: "Back to start",
+} as const
+
+export const COMPOSE_OFFER_PLACEHOLDER = {
+  heading: "Compare an offer",
+  currentPolicyLabel: "Current policy",
+  notice: "Offer upload is coming in the next release (INS-18). Back to landing to use the ad-hoc path for now.",
+  backButton: "Back to start",
+} as const
+
+export const MANAGE_POLICIES = {
+  heading: "My policies",
+  backButton: "Back to start",
+} as const
+
+export const COMPOSE_ADHOC = {
+  heading: "Ad-hoc comparison",
+  backButton: "Back to start",
 } as const
