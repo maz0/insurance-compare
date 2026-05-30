@@ -30,3 +30,6 @@ platinum.pdf
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# local data — SQLite + document blobs (INS-14)
+.data/
