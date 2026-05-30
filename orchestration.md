@@ -486,9 +486,14 @@ Some tickets carry decisions an agent cannot safely self-certify. These are
    posts a structured verification comment on the PR** — criterion-by-criterion,
    each criterion getting ✅/❌, a literal quoted code/config excerpt, and one
    sentence of plain English. For tickets that modify a prompt file
-   (`lib/prompt.ts`), the comment quotes the **full before/after** of the
-   affected system prompt(s) side by side — prose regressions are the kind
-   structural review can miss, and the English text needs a human read.
+   (`lib/prompt.ts`), the comment quotes the **entire file** before/after side
+   by side — **not** a single named export. Prompt logic can live in helper
+   functions (e.g. user-prompt builders) as well as in the `SYSTEM_PROMPT`
+   constant, and a narrower artifact masks those changes. The principle
+   generalises: **a checkpoint verification artifact must match the scope of
+   where the change can live, not the scope the reviewer assumed it would.**
+   (Rule earned the hard way during INS-15, where a narrow `SYSTEM_PROMPT`-only
+   artifact almost cost a wrong revert.)
 3. The human reviews the **verification comment** as the checkpoint pass — not
    the raw diff. The artifact is what makes the gate honest about what a
    non-developer can actually verify. Reading this comment IS Checkpoint A / B / C.
