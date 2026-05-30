@@ -1,4 +1,5 @@
 import type { CategoryKey } from "@/lib/categories"
+import type { ComparisonMode } from "@/lib/types"
 
 // [RULE-6] Output is a single JSON object — no markdown, no prose, no code fences.
 export const SYSTEM_PROMPT = `You are an insurance policy analysis assistant. You will be given two insurance policy documents and must compare them.
@@ -91,11 +92,30 @@ Notes on the schema:
 export function buildUserPrompt(
   policyAName: string,
   policyBName: string,
+  mode: ComparisonMode,
 ): string {
+  if (mode === "saved") {
+    return `Compare the following two insurance policies.
+
+Policy A is the user's CURRENT policy, named: ${policyAName}
+Policy B is the OFFER (a new policy the user is considering), named: ${policyBName}
+
+The question to answer is: should the user switch from their current policy (A) to the offer (B)?
+
+Evaluate each dimension equally — there is no user-supplied priority ranking. For the verdict:
+- Use "switch" if the offer (B) is clearly better overall than the current policy (A).
+- Use "stay" if the current policy (A) is clearly better overall than the offer (B).
+- Use "too_close" when neither policy clearly wins.
+
+The content of each policy follows in the subsequent content blocks. Extract all coverage dimensions you can find, compare them head-to-head, and return a single JSON object as specified in your instructions.`
+  }
+
   return `Compare the following two insurance policies.
 
 Policy A is named: ${policyAName}
 Policy B is named: ${policyBName}
+
+This is a neutral head-to-head comparison. Neither policy is assumed to be the user's current policy. Evaluate each dimension on its own merits.
 
 The content of each policy follows in the subsequent content blocks. Extract all coverage dimensions you can find, compare them head-to-head, and return a single JSON object as specified in your instructions.`
 }
