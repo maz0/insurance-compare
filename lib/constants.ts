@@ -72,3 +72,33 @@ export const COMPARISON_TABLE = {
   pageLabel: "Page:",
   noEntry: "Not found in this document",
 } as const
+
+export const POLICY_LIST = {
+  heading: "My current policies",
+  addButton: "Add policy",
+  addDialogTitle: "Add policy",
+  editDialogTitle: "Edit policy",
+  emptyState: "No saved policies yet. Add your current insurance to get started.",
+  loading: "Loading…",
+} as const
+
+export const POLICY_CARD = {
+  fileCountSingular: "1 file",
+  fileCountPlural: (n: number) => `${n} files`,
+  editAriaLabel: (name: string) => `Edit ${name}`,
+  deleteAriaLabel: (name: string) => `Delete ${name}`,
+} as const
+
+export const POLICY_FORM = {
+  nameLabel: "Policy name",
+  namePlaceholder: "e.g. Volvo XC60 — Folksam",
+  productLabel: "Insurance type",
+  productPlaceholder: "Select a product…",
+  filesLabel: "Policy documents (optional)",
+  saveButton: "Save",
+  savingButton: "Saving…",
+  cancelButton: "Cancel",
+  errorNameRequired: "Please enter a name for this policy.",
+  errorProductRequired: "Please select an insurance type.",
+  errorSaveFailed: "Couldn't save your policy. Please try again.",
+} as const
