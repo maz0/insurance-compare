@@ -1,11 +1,14 @@
 import type { AppErrorCode } from "@/lib/types"
 
 export const ERROR_MESSAGES: Record<AppErrorCode, string> = {
-  file_too_large:        "This file is too large. Maximum size is 20MB.",
   wrong_file_type:       "Word documents aren't supported directly — please export to PDF and upload that. Supported formats: PDF, JPG, PNG, or paste text directly.",
+  file_too_large:        "These documents are too large to analyse in one go (limit ~32 MB or 600 pages total). Try fewer or smaller files, or split the policy.",
+  input_too_large:       "Your message is too long — please shorten it.",
   analysis_failed:       "Analysis failed. Please try again.",
   no_insurance_content:  "One or more inputs don't appear to be insurance policies. Please check your files.",
   invalid_response:      "Analysis failed. Please try again.",
+  chat_failed:           "Couldn't answer that just now. Please try again.",
+  storage_error:         "Couldn't save or load your policies. Please try again.",
 }
 
 export const ACCEPTED_FILE_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png", ".webp", ".gif"] as const
