@@ -19,11 +19,23 @@ import type {
   AppState,
   AppStep,
   ChatState,
+  ComparisonMode,
   PolicyInput,
   AnalysisResult,
   AppError,
   SavedPolicy,
 } from "@/lib/types"
+
+interface FileInput {
+  base64: string
+  media_type: string
+}
+
+interface SerializedDocuments {
+  documents: { a: FileInput[]; b: FileInput[] }
+  policyNames: { a: string; b: string }
+  mode: ComparisonMode
+}
 
 const INITIAL_CHAT: ChatState = {
   messages: [],
@@ -63,6 +75,7 @@ async function serializePolicy(input: PolicyInput) {
 
 export default function Home() {
   const [state, setState] = useState<AppState>(INITIAL_STATE)
+  const [serialized, setSerialized] = useState<SerializedDocuments | null>(null)
 
   // Load saved policies on mount via GET /api/policies
   useEffect(() => {
@@ -86,6 +99,7 @@ export default function Home() {
       ...INITIAL_STATE,
       savedPolicies: prev.savedPolicies,
     }))
+    setSerialized(null)
   }, [])
 
   function handleTransition(step: AppStep) {
@@ -100,12 +114,19 @@ export default function Home() {
       policy_a: policyA,
       policy_b: policyB,
     }))
+    setSerialized(null)
 
     try {
       const [serialA, serialB] = await Promise.all([
         serializePolicy(policyA),
         serializePolicy(policyB),
       ])
+
+      setSerialized({
+        documents: { a: serialA.files, b: serialB.files },
+        policyNames: { a: policyA.name, b: policyB.name },
+        mode: "adhoc",
+      })
 
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -209,7 +230,13 @@ export default function Home() {
               <ArrowLeft className="mr-2 h-4 w-4" />
               {LANDING.backToLanding}
             </Button>
-            <AnalysisView result={result} error={error} />
+            <AnalysisView
+              result={result}
+              error={error}
+              documents={serialized?.documents}
+              policyNames={serialized?.policyNames}
+              mode={serialized?.mode}
+            />
           </div>
         </main>
       )
